@@ -1,0 +1,16 @@
+siem_url: http://localhost:3001
+api_key: k3-ingest-key
+agent_version: "1.0.0"
+
+collection_interval: 10
+heartbeat_interval: 30
+batch_size: 50
+
+sources:
+  - windows_security
+  - windows_system
+  - windows_application
+  - linux_syslog
+  - linux_auth
+
+simulate: false

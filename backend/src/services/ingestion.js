@@ -57,9 +57,9 @@ function startIngestion(ms=3000) {
     (async () => {
       const d = db();
       const batch = Array.from({length:rand(1,4)}, genEvent);
-      const insE = d.prepare(`INSERT INTO events(id,timestamp,source,event_id,computer,username,ip_address,action,severity,raw_log,index_name) VALUES(?,?,?,?,?,?,?,?,?,?,?)`);
+      const insE = d.prepare(`INSERT INTO events(id,timestamp,source,event_id,computer,username,ip_address,action,severity,raw_log,index_name,agent_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`);
       const insertEvents = d.transaction(async (rows) => {
-        for (const e of rows) await insE.run(e.id,e.timestamp,e.source,e.event_id,e.computer,e.username,e.ip_address,e.action,e.severity,e.raw_log,e.index_name);
+        for (const e of rows) await insE.run(e.id,e.timestamp,e.source,e.event_id,e.computer,e.username,e.ip_address,e.action,e.severity,e.raw_log,e.index_name,null);
       });
       await insertEvents(batch);
 

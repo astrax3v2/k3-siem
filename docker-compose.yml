@@ -8,10 +8,11 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U k3 -d k3_siem"]
       interval: 5s
       timeout: 5s
       retries: 20
+    restart: unless-stopped
 
   app:
     build: .
@@ -24,10 +25,53 @@ services:
       NODE_ENV: production
       DB_CLIENT: postgres
       DATABASE_URL: postgresql://k3:k3_password@db:5432/k3_siem
-      JWT_SECRET: change-me
+      JWT_SECRET: k3-siem-production-secret-change-me
       CORS_ORIGIN: "*"
-      LOG_INGEST_INTERVAL: "3000"
-      INGEST_API_KEY: "k3-ingest-key"
+      LOG_INGEST_INTERVAL: "5000"
+      INGEST_API_KEY: k3-ingest-key
+    restart: unless-stopped
+
+  agent-windows:
+    build: ./k3-agent
+    depends_on:
+      - app
+    environment:
+      K3_SIEM_URL: http://app:3001
+      K3_API_KEY: k3-ingest-key
+      K3_SIMULATE: "true"
+      K3_SIMULATE_OS: windows
+      K3_HOSTNAME: WS-PC-001
+      K3_COLLECTION_INTERVAL: "8"
+      K3_HEARTBEAT_INTERVAL: "30"
+    restart: unless-stopped
+
+  agent-linux:
+    build: ./k3-agent
+    depends_on:
+      - app
+    environment:
+      K3_SIEM_URL: http://app:3001
+      K3_API_KEY: k3-ingest-key
+      K3_SIMULATE: "true"
+      K3_SIMULATE_OS: linux
+      K3_HOSTNAME: SRV-UBUNTU-01
+      K3_COLLECTION_INTERVAL: "12"
+      K3_HEARTBEAT_INTERVAL: "30"
+    restart: unless-stopped
+
+  agent-network:
+    build: ./k3-agent
+    depends_on:
+      - app
+    environment:
+      K3_SIEM_URL: http://app:3001
+      K3_API_KEY: k3-ingest-key
+      K3_SIMULATE: "true"
+      K3_SIMULATE_OS: network
+      K3_HOSTNAME: FW-PALOALTO-01
+      K3_COLLECTION_INTERVAL: "15"
+      K3_HEARTBEAT_INTERVAL: "30"
+    restart: unless-stopped
 
 volumes:
   postgres_data:

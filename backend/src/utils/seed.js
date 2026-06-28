@@ -43,14 +43,14 @@ async function seed() {
   console.log('[Seed] Users: 4');
 
   // Events - 500 rows
-  const insE = d.prepare(`INSERT INTO events(id,timestamp,source,event_id,computer,username,ip_address,action,severity,raw_log,index_name) VALUES(?,?,?,?,?,?,?,?,?,?,?)`);
+  const insE = d.prepare(`INSERT INTO events(id,timestamp,source,event_id,computer,username,ip_address,action,severity,raw_log,index_name,agent_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`);
   const insertEvents = d.transaction(async (rows) => { for (const r of rows) await insE.run(...r); });
   const evtRows = Array.from({length:500}, () => {
     const sev=pick(SEVS), src=pick(SOURCES), comp=pick(COMPUTERS), user=pick(USERS);
     const ip=`${rand(10,192)}.${rand(1,254)}.${rand(1,254)}.${rand(1,254)}`;
     const action=pick(ACTIONS), eid=pick(EIDS), ts=ago(rand(0,86400000));
     const idx=pick(INDICES);
-    return [uuidv4(),ts,src,eid,comp,user,ip,action,sev,JSON.stringify({EventID:eid,Computer:comp,User:user,IP:ip}),idx];
+    return [uuidv4(),ts,src,eid,comp,user,ip,action,sev,JSON.stringify({EventID:eid,Computer:comp,User:user,IP:ip}),idx,null];
   });
   await insertEvents(evtRows);
   console.log('[Seed] Events: 500');

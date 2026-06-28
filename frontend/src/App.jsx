@@ -6,6 +6,7 @@ import Dashboard from './components/Dashboard/Dashboard';
 import AlertManager from './components/Alerts/AlertManager';
 import KQLEngine from './components/KQL/KQLEngine';
 import { EventExplorer, IncidentResponse, Correlation, ThreatIntel, UEBA, SOAR } from './components/Pages';
+import AgentManager from './components/Agents/AgentManager';
 import { useWebSocket } from './hooks/useWebSocket';
 import './index.css';
 
@@ -35,6 +36,7 @@ function ProtectedApp() {
         <Route path="/intel" element={<ThreatIntel />} />
         <Route path="/ueba" element={<UEBA />} />
         <Route path="/soar" element={<SOAR />} />
+        <Route path="/agents" element={<AgentManager />} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </Layout>

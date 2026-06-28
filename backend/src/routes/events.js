@@ -6,12 +6,13 @@ const { authenticate } = require('../middleware/auth');
 const router = express.Router();
 
 router.get('/', authenticate, async (req, res) => {
-  const { page=1, limit=50, severity, source, search, index } = req.query;
+  const { page=1, limit=50, severity, source, search, index, agent_id } = req.query;
   const offset = (parseInt(page)-1)*parseInt(limit);
   let where=[], params=[];
   if (severity) { where.push('severity = ?'); params.push(severity); }
   if (source)   { where.push('source = ?');   params.push(source); }
   if (index)    { where.push('index_name = ?'); params.push(index); }
+  if (agent_id) { where.push('agent_id = ?'); params.push(agent_id); }
   if (search)   { where.push('(username LIKE ? OR computer LIKE ? OR ip_address LIKE ? OR action LIKE ?)'); params.push(`%${search}%`,`%${search}%`,`%${search}%`,`%${search}%`); }
   const wc = where.length ? 'WHERE '+where.join(' AND ') : '';
   const d = db();
@@ -32,23 +33,43 @@ router.get('/stats', authenticate, async (req, res) => {
   });
 });
 
-// External log ingest
 router.post('/ingest', async (req, res) => {
   const key = req.headers['x-api-key'];
   if (key !== (process.env.INGEST_API_KEY || 'k3-ingest-key'))
     return res.status(401).json({ error: 'Invalid API key' });
   const logs = Array.isArray(req.body) ? req.body : [req.body];
+  const agentId = req.headers['x-agent-id'] || null;
   const d = db();
-  const ins = d.prepare(`INSERT INTO events(id,timestamp,source,event_id,computer,username,ip_address,action,severity,raw_log,index_name) VALUES(?,?,?,?,?,?,?,?,?,?,?)`);
+  const ins = d.prepare(`INSERT INTO events(id,timestamp,source,event_id,computer,username,ip_address,action,severity,raw_log,index_name,agent_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`);
   const insertAll = d.transaction(async (rows) => {
     for (const r of rows) await ins.run(...r);
   });
-  const rows = logs.map(l => [uuidv4(), l.timestamp||new Date().toISOString(), l.source||'Unknown', l.event_id||null, l.computer||null, l.username||null, l.ip_address||null, l.action||null, l.severity||'Info', typeof l.raw==='string'?l.raw:JSON.stringify(l), l.index||'default']);
+  const rows = logs.map(l => [
+    uuidv4(),
+    l.timestamp || new Date().toISOString(),
+    l.source || 'Unknown',
+    l.event_id || null,
+    l.computer || null,
+    l.username || null,
+    l.ip_address || null,
+    l.action || null,
+    l.severity || 'Info',
+    typeof l.raw === 'string' ? l.raw : JSON.stringify(l),
+    l.index || 'default',
+    l.agent_id || agentId
+  ]);
   await insertAll(rows);
+
+  if (agentId) {
+    try {
+      await d.prepare('UPDATE agents SET events_sent = events_sent + ?, last_heartbeat = ? WHERE id = ?')
+        .run(rows.length, new Date().toISOString(), agentId);
+    } catch {}
+  }
+
   res.json({ ingested: rows.length, status: 'ok' });
 });
 
-// KQL query engine
 router.post('/kql', authenticate, async (req, res) => {
   const { query } = req.body;
   if (!query) return res.status(400).json({ error: 'Query required' });
@@ -82,6 +103,8 @@ function kqlToSql(kql) {
       if (src) { conditions.push('source = ?'); params.push(src[1]); }
       const user = cond.match(/username\s*!=\s*"([^"]+)"/);
       if (user) { conditions.push('username != ?'); params.push(user[1]); }
+      const agentMatch = cond.match(/agent_id\s*==\s*"([^"]+)"/);
+      if (agentMatch) { conditions.push('agent_id = ?'); params.push(agentMatch[1]); }
     }
     if (line.startsWith('| top ')) { limitN = parseInt(line.split(' ')[2]) || 10; }
     if (line.startsWith('| project ')) { /* ignore for now */ }

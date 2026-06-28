@@ -1,6 +1,8 @@
 # K3 SIEM Platform
 
-**Enterprise Security Operations Platform — K3 SIEM v2.4.1**
+**Enterprise Security Operations Platform — K3 SIEM v2.0**
+
+A full-stack SIEM with agent-based log collection, real-time correlation, and incident response — inspired by SentinelOne and Microsoft Sentinel.
 
 ---
 
@@ -12,264 +14,184 @@ k3-siem/
 │   ├── src/
 │   │   ├── index.js            # Entry point + WebSocket server
 │   │   ├── models/
-│   │   │   └── db.js           # SQLite schema + init (better-sqlite3)
+│   │   │   └── db.js           # Dual-dialect DB (SQLite + PostgreSQL)
 │   │   ├── routes/
 │   │   │   ├── auth.js         # JWT auth (login, /me)
 │   │   │   ├── events.js       # Log ingestion, KQL engine, event CRUD
+│   │   │   ├── agents.js       # Agent registration, heartbeat, management
 │   │   │   └── api.js          # Alerts, IOCs, Correlation, SOAR, UEBA, KQL
 │   │   ├── services/
-│   │   │   └── ingestion.js    # Live log simulation + alert correlation
+│   │   │   ├── ingestion.js    # Live log simulation + alert correlation
+│   │   │   └── agentMonitor.js # Agent health monitoring
 │   │   ├── middleware/
 │   │   │   └── auth.js         # JWT middleware + RBAC
 │   │   └── utils/
 │   │       └── seed.js         # Demo data seeder
-│   └── data/                   # SQLite database (auto-created)
-│       └── siem.db
+│   └── data/                   # SQLite database (auto-created, local dev)
 │
-└── frontend/                   # React 18 SPA
-    └── src/
-        ├── App.jsx             # Router + auth guard
-        ├── services/api.js     # Axios client + all API calls
-        ├── hooks/useWebSocket.js # Live event WebSocket hook
-        └── components/
-            ├── Layout/         # Topbar, Sidebar, Auth/Login
-            ├── Dashboard/      # KPI tiles, trend charts, live feeds
-            ├── Alerts/         # Alert manager with real-time updates
-            ├── KQL/            # KQL query editor + saved rules
-            └── Pages.jsx       # Events, Correlation, Intel, UEBA, SOAR
+├── frontend/                   # React 18 SPA
+│   └── src/
+│       ├── components/
+│       │   ├── Dashboard/      # KPI tiles, charts, live feeds
+│       │   ├── Alerts/         # Alert management + detail panel
+│       │   ├── Agents/         # Agent management (status, events, detail)
+│       │   ├── KQL/            # KQL query editor + results
+│       │   ├── Layout/         # Topbar, sidebar, auth
+│       │   └── Pages.jsx       # Events, Incidents, Correlation, Intel, UEBA, SOAR
+│       ├── hooks/              # WebSocket hook
+│       └── services/           # API client (Axios)
+│
+├── k3-agent/                   # Python endpoint agent
+│   ├── agent.py                # Cross-platform log collector
+│   ├── config.yaml             # Agent configuration
+│   ├── requirements.txt        # Python dependencies
+│   └── Dockerfile              # Agent container image
+│
+├── docker-compose.yml          # PostgreSQL + App + 3 Agent containers
+├── Dockerfile                  # Multi-stage Node.js build
+├── start.bat / start.sh        # Local development startup
+└── package.json                # Workspace root
 ```
-
----
-
-## Features
-
-| Module | Capability |
-|--------|-----------|
-| **Dashboard** | Live KPI tiles, 14-day alert trend (Recharts), severity breakdown, live event stream |
-| **Alert Manager** | Paginated alert table, severity/status filtering, real-time WebSocket updates, status management via API |
-| **Event Explorer** | 50-per-page raw log view, multi-field search, index filtering, live ingestion overlay |
-| **KQL Engine** | Real KQL→SQL transpiler, 5 preloaded detection rules, query saving, execution timing |
-| **Correlation** | Multi-index rules, toggle enable/disable, create new rules, hit counters |
-| **Threat Intel** | IOC CRUD (add/list/filter), 6 live intel feeds, confidence scoring |
-| **UEBA** | User risk scores, anomaly counts, ML deviation flags, sortable table |
-| **SOAR** | Playbook execution with real DB updates, step-by-step progress polling, execution history |
-| **Log Ingestion** | Live HTTP ingest endpoint + automatic 3s synthetic log generation |
-| **WebSocket** | Real-time event and alert streaming to all connected clients |
-| **Auth** | JWT login, role-based access (admin/soc_lead/analyst), 12h token expiry |
 
 ---
 
 ## Quick Start
 
-### Prerequisites
-- Node.js >= 18
-- npm >= 9
-
-### 1 — Install dependencies
+### Local Development (SQLite)
 
 ```bash
-cd k3-siem
+# Windows
+start.bat
 
-# Backend
-cd backend && npm install && cd ..
-
-# Frontend
-cd frontend && npm install && cd ..
+# Linux/Mac
+chmod +x start.sh && ./start.sh
 ```
 
-### 2 — Seed demo data
+Requires Node.js >= 22. Starts backend on port 3001, frontend on port 3000.
+
+### Docker (PostgreSQL + Agents)
 
 ```bash
-cd backend && npm run seed
+docker-compose up --build
 ```
 
-This creates:
-- **4 users** (pbasnet, jmaharjan, bpaudel, analyst1)
-- **500 raw events** across 5 indices
-- **60 alerts** with MITRE mappings
-- **12 IOCs** with threat intel data
-- **6 correlation rules**
-- **4 SOAR playbooks**
-- **10 UEBA user risk scores**
-- **6 KQL saved queries/rules**
-- **6 intel feeds**
+This starts:
+- **PostgreSQL 16** — production database
+- **K3 SIEM App** — backend + frontend on port 3001
+- **3 Simulated Agents** — Windows, Linux, Network endpoints
 
-### 3 — Start backend
+Open http://localhost:3001 after startup.
+
+### Deploy Real Agents
 
 ```bash
-cd backend && npm run dev
+cd k3-agent
+pip install -r requirements.txt
+
+# Collect real logs from this machine
+python agent.py --config config.yaml
+
+# Or simulate an endpoint
+python agent.py --simulate --simulate-os windows
 ```
 
-Backend starts at: `http://localhost:3001`  
-WebSocket at: `ws://localhost:3001/ws`
-
-### 4 — Start frontend (new terminal)
-
-```bash
-cd frontend && npm start
-```
-
-Frontend starts at: `http://localhost:3000`
+Configure `config.yaml` or environment variables:
+- `K3_SIEM_URL` — SIEM backend URL
+- `K3_API_KEY` — Ingest API key
+- `K3_HOSTNAME` — Override hostname
+- `K3_SIMULATE` — Enable simulation mode
+- `K3_SIMULATE_OS` — Simulate: windows, linux, network
 
 ---
 
 ## Login Credentials
 
-| Username | Password | Role |
-|----------|----------|------|
-| `pbasnet` | `K3@2026` | Admin |
-| `jmaharjan` | `K3@2026` | T2 Analyst |
-| `bpaudel` | `K3@2026` | T1 Analyst |
-| `analyst1` | `K3@2026` | T1 Analyst |
+| Username | Password | Role | Full Name |
+|----------|----------|------|-----------|
+| pbasnet | K3@2026 | Admin | Prem Basnet |
+| jmaharjan | K3@2026 | T2 Analyst | Jenan Maharjan |
+| bpaudel | K3@2026 | T2 Analyst | Bamdev Paudel |
+| analyst1 | K3@2026 | T1 Analyst | SOC Analyst |
 
 ---
 
-## API Reference
+## Features
 
-### Authentication
-```
-POST /api/auth/login       { username, password } → { token, user }
-GET  /api/auth/me          (Bearer token) → { user }
-```
+### Agent System
+- **Cross-platform agents** — Collect Windows Event Logs, Linux syslog/auth, network device logs
+- **Agent registration & heartbeat** — Agents self-register and send heartbeats every 30s
+- **Agent management UI** — View all agents, status (online/stale/offline), events, detail panel
+- **Simulation mode** — Docker containers simulate Windows, Linux, and network endpoints
+- **Auto-alerting** — Alerts generated when agents go offline
 
-### Events & Log Ingestion
-```
-GET  /api/events           ?page&limit&severity&source&search&index
-GET  /api/events/stats     Summary statistics
-POST /api/events/ingest    (x-api-key: k3-ingest-key) Bulk log ingest
-POST /api/events/kql       { query } → Execute KQL-style query
-```
+### Core SIEM
+- **Real-time streaming** — WebSocket live feed of events and alerts
+- **KQL query engine** — Kusto-style query language transpiled to SQL
+- **Alert correlation** — Brute force, PowerShell exec, privilege escalation detection
+- **MITRE ATT&CK mapping** — Tactics and techniques on all alerts
+- **Incident response** — Create incidents, link alerts, add notes, status workflow
 
-### Alerts
-```
-GET   /api/alerts          ?page&limit&severity&status&search
-GET   /api/alerts/stats    Severity/status/tactic breakdown
-GET   /api/alerts/:id      Single alert detail
-PATCH /api/alerts/:id      { status, analyst_id, risk_score }
-```
+### Modules
+- **Threat Intelligence** — IOC management with confidence scoring
+- **Correlation Rules** — Custom detection rules with risk scoring
+- **SOAR Playbooks** — Automated response with step-by-step execution
+- **UEBA** — User risk scoring with anomaly detection
+- **Saved Queries** — KQL queries saved as detection rules
 
-### Threat Intel
-```
-GET  /api/intel/iocs       ?type&severity&search&page
-POST /api/intel/iocs       { type, value, confidence, severity, source }
-GET  /api/intel/feeds      Feed status list
-```
+### Infrastructure
+- **Dual database** — SQLite for local dev, PostgreSQL for production
+- **Docker deployment** — Multi-stage build, health checks, persistent volumes
+- **JWT + RBAC** — Role-based access (admin, t2_analyst, t1_analyst)
+- **Dark theme UI** — Professional security operations interface
 
-### Correlation
-```
-GET   /api/correlation/rules        All rules
-POST  /api/correlation/rules        Create new rule
-PATCH /api/correlation/rules/:id    { enabled }
-```
+---
 
-### SOAR
-```
-GET  /api/soar/playbooks            All playbooks + recent executions
-POST /api/soar/playbooks/:id/execute  { alert_id? } → { execution_id }
-GET  /api/soar/executions/:id       Poll execution progress
-```
+## API Endpoints
 
-### UEBA
+### Agent API
 ```
-GET  /api/ueba/scores      All user risk scores
+POST   /api/agents/register         Agent self-registration (API key auth)
+POST   /api/agents/:id/heartbeat    Agent heartbeat (API key auth)
+GET    /api/agents                   List all agents (JWT auth)
+GET    /api/agents/stats             Agent statistics (JWT auth)
+GET    /api/agents/:id               Agent detail + recent events
+PATCH  /api/agents/:id               Update agent tags/config (admin/t2)
+DELETE /api/agents/:id               Remove agent (admin only)
 ```
 
-### Log Ingest (External)
-```bash
-# Send logs programmatically
-curl -X POST http://localhost:3001/api/events/ingest \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: k3-ingest-key" \
-  -d '[{
-    "source": "Windows Security",
-    "event_id": "4625",
-    "computer": "WS-001",
-    "username": "admin",
-    "ip_address": "10.10.1.50",
-    "action": "Failed Logon",
-    "severity": "High",
-    "index": "windows-security"
-  }]'
+### Log Ingest
+```
+POST   /api/events/ingest            Bulk log ingestion (API key + X-Agent-Id header)
+```
+
+### Auth
+```
+POST   /api/auth/login               Login → JWT token
+GET    /api/auth/me                   Current user info
 ```
 
 ---
 
-## WebSocket Events
+## Environment Variables
 
-Connect to `ws://localhost:3001/ws` for live streaming:
-
-```js
-const ws = new WebSocket('ws://localhost:3001/ws');
-ws.onmessage = (e) => {
-  const { type, data } = JSON.parse(e.data);
-  // type: 'connected' | 'events' | 'alerts'
-  // data: array of event or alert objects
-};
-```
-
----
-
-## KQL Query Examples
-
-```kql
-// Brute force detection
-SecurityEvent
-| where event_id == "4625"
-| where timestamp > datetime_ago("5m")
-| order by timestamp desc
-
-// Suspicious PowerShell
-SecurityEvent
-| where event_id == "4688"
-| where action has_any ("PowerShell","bypass","encoded")
-| project timestamp, computer, username, action
-
-// Critical events
-SecurityEvent
-| where severity == "Critical"
-| order by timestamp desc
-
-// Top 10 most recent
-SecurityEvent
-| top 10
-```
+| Variable | Default | Description |
+|----------|---------|-------------|
+| PORT | 3001 | Backend port |
+| NODE_ENV | development | Environment |
+| JWT_SECRET | (required) | JWT signing key |
+| DB_CLIENT | sqlite | `postgres` for PostgreSQL |
+| DATABASE_URL | - | PostgreSQL connection string |
+| DB_PATH | ./data/siem.db | SQLite database path |
+| LOG_INGEST_INTERVAL | 3000 | Synthetic event generation (ms) |
+| INGEST_API_KEY | k3-ingest-key | API key for agent ingest |
+| CORS_ORIGIN | * | CORS allowed origins |
 
 ---
 
-## Production Deployment
+## Tech Stack
 
-```bash
-# Build frontend
-cd frontend && npm run build
-
-# Set production env
-cd backend
-echo "NODE_ENV=production" >> .env
-echo "JWT_SECRET=your-very-secure-random-secret" >> .env
-echo "CORS_ORIGIN=https://yourdomain.com" >> .env
-
-# Start
-npm start
-```
-
-The backend serves the React build at `/*` in production mode.
-
----
-
-## Database Schema
-
-SQLite database at `backend/data/siem.db` with tables:
-- `events` — raw log events (indexed by timestamp, severity, source)
-- `alerts` — correlated security alerts with MITRE mapping
-- `iocs` — threat indicators
-- `correlation_rules` — multi-index detection rules
-- `playbooks` — SOAR automation playbooks
-- `playbook_executions` — execution audit trail
-- `ueba_scores` — user risk scores
-- `kql_saved_queries` — saved KQL queries and detection rules
-- `intel_feeds` — threat intelligence feed registry
-- `users` — SIEM user accounts
-
----
-
-*K3 SIEM v2.4.1 · Built with Node.js + React + SQLite + WebSocket*
+- **Backend**: Node.js 22, Express 4, WebSocket (ws), PostgreSQL/SQLite
+- **Frontend**: React 18, React Router 6, Recharts, Axios
+- **Agent**: Python 3.12, requests, psutil, PyYAML
+- **Database**: PostgreSQL 16 (production), SQLite (development)
+- **Deployment**: Docker, Docker Compose

@@ -12,6 +12,7 @@ const NAV = [
   { path: '/intel', icon: '🔴', label: 'Threat Intel' },
   { path: '/ueba', icon: '👤', label: 'UEBA' },
   { path: '/soar', icon: '⚙️', label: 'SOAR' },
+  { path: '/agents', icon: '🖥️', label: 'Agents' },
 ];
 
 export default function Layout({ children, connected, liveAlertCount = 0 }) {
@@ -64,7 +65,7 @@ export default function Layout({ children, connected, liveAlertCount = 0 }) {
             );
           })}
           <div style={{ marginTop: 'auto', padding: '8px 14px', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text3)' }}>
-            <div>K3 SIEM · v2.4.1</div>
+            <div>K3 SIEM · v2.0.0</div>
           </div>
         </div>
 

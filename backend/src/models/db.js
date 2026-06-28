@@ -185,7 +185,8 @@ function schemaSql() {
         id TEXT PRIMARY KEY, timestamp TIMESTAMPTZ DEFAULT NOW(), source TEXT NOT NULL,
         event_id TEXT, computer TEXT, username TEXT, ip_address TEXT, action TEXT,
         severity TEXT DEFAULT 'Info', raw_log TEXT,
-        indexed_at TIMESTAMPTZ DEFAULT NOW(), index_name TEXT DEFAULT 'primary'
+        indexed_at TIMESTAMPTZ DEFAULT NOW(), index_name TEXT DEFAULT 'primary',
+        agent_id TEXT
       );
       CREATE TABLE IF NOT EXISTS alerts (
         id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT, severity TEXT NOT NULL,
@@ -249,14 +250,30 @@ function schemaSql() {
         id TEXT PRIMARY KEY, name TEXT NOT NULL, url TEXT, type TEXT,
         status TEXT DEFAULT 'active', last_sync TIMESTAMPTZ, ioc_count INTEGER DEFAULT 0
       );
+      CREATE TABLE IF NOT EXISTS agents (
+        id TEXT PRIMARY KEY,
+        hostname TEXT NOT NULL,
+        os TEXT,
+        ip TEXT,
+        status TEXT DEFAULT 'online',
+        agent_version TEXT,
+        tags TEXT,
+        config TEXT,
+        collected_sources TEXT,
+        events_sent INTEGER DEFAULT 0,
+        last_heartbeat TIMESTAMPTZ DEFAULT NOW(),
+        registered_at TIMESTAMPTZ DEFAULT NOW()
+      );
       CREATE INDEX IF NOT EXISTS idx_events_ts  ON events(timestamp);
       CREATE INDEX IF NOT EXISTS idx_events_sev ON events(severity);
+      CREATE INDEX IF NOT EXISTS idx_events_agent ON events(agent_id);
       CREATE INDEX IF NOT EXISTS idx_alerts_ts  ON alerts(created_at);
       CREATE INDEX IF NOT EXISTS idx_alerts_sev ON alerts(severity);
       CREATE INDEX IF NOT EXISTS idx_iocs_type  ON iocs(type);
       CREATE INDEX IF NOT EXISTS idx_incidents_ts     ON incidents(created_at);
       CREATE INDEX IF NOT EXISTS idx_incidents_status ON incidents(status);
       CREATE INDEX IF NOT EXISTS idx_inc_notes_inc    ON incident_notes(incident_id);
+      CREATE INDEX IF NOT EXISTS idx_agents_status    ON agents(status);
     `;
   }
   return `
@@ -269,7 +286,8 @@ function schemaSql() {
       id TEXT PRIMARY KEY, timestamp TEXT DEFAULT (datetime('now')), source TEXT NOT NULL,
       event_id TEXT, computer TEXT, username TEXT, ip_address TEXT, action TEXT,
       severity TEXT DEFAULT 'Info', raw_log TEXT,
-      indexed_at TEXT DEFAULT (datetime('now')), index_name TEXT DEFAULT 'primary'
+      indexed_at TEXT DEFAULT (datetime('now')), index_name TEXT DEFAULT 'primary',
+      agent_id TEXT
     );
     CREATE TABLE IF NOT EXISTS alerts (
       id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT, severity TEXT NOT NULL,
@@ -333,14 +351,30 @@ function schemaSql() {
       id TEXT PRIMARY KEY, name TEXT NOT NULL, url TEXT, type TEXT,
       status TEXT DEFAULT 'active', last_sync TEXT, ioc_count INTEGER DEFAULT 0
     );
+    CREATE TABLE IF NOT EXISTS agents (
+      id TEXT PRIMARY KEY,
+      hostname TEXT NOT NULL,
+      os TEXT,
+      ip TEXT,
+      status TEXT DEFAULT 'online',
+      agent_version TEXT,
+      tags TEXT,
+      config TEXT,
+      collected_sources TEXT,
+      events_sent INTEGER DEFAULT 0,
+      last_heartbeat TEXT DEFAULT (datetime('now')),
+      registered_at TEXT DEFAULT (datetime('now'))
+    );
     CREATE INDEX IF NOT EXISTS idx_events_ts  ON events(timestamp);
     CREATE INDEX IF NOT EXISTS idx_events_sev ON events(severity);
+    CREATE INDEX IF NOT EXISTS idx_events_agent ON events(agent_id);
     CREATE INDEX IF NOT EXISTS idx_alerts_ts  ON alerts(created_at);
     CREATE INDEX IF NOT EXISTS idx_alerts_sev ON alerts(severity);
     CREATE INDEX IF NOT EXISTS idx_iocs_type  ON iocs(type);
     CREATE INDEX IF NOT EXISTS idx_incidents_ts     ON incidents(created_at);
     CREATE INDEX IF NOT EXISTS idx_incidents_status ON incidents(status);
     CREATE INDEX IF NOT EXISTS idx_inc_notes_inc    ON incident_notes(incident_id);
+    CREATE INDEX IF NOT EXISTS idx_agents_status    ON agents(status);
   `;
 }
 

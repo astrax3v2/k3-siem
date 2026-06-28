@@ -6,3 +6,7 @@ frontend/build/
 .DS_Store
 *.log
 .env.local
+__pycache__/
+*.pyc
+k3-agent/venv/
+.claude/

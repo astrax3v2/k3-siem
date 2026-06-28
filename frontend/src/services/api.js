@@ -69,6 +69,14 @@ export const kqlApi = {
   run: (query) => eventsApi.kql(query),
 };
 
+export const agentsApi = {
+  list: () => api.get('/agents'),
+  stats: () => api.get('/agents/stats'),
+  get: (id) => api.get(`/agents/${id}`),
+  update: (id, data) => api.patch(`/agents/${id}`, data),
+  remove: (id) => api.delete(`/agents/${id}`),
+};
+
 export const incidentsApi = {
   list: (params) => api.get('/incidents', { params }),
   create: (data) => api.post('/incidents', data),

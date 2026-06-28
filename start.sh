@@ -4,29 +4,20 @@ set -e
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; BOLD='\033[1m'; NC='\033[0m'
 
 echo ""
-echo -e "${BOLD}${BLUE}  🛡️  K3 SIEM Platform v2.4.1${NC}"
+echo -e "${BOLD}${BLUE}  🛡️  K3 SIEM Platform v2.0${NC}"
 echo ""
 
 # Check Node.js version
 NODE_VER=$(node -v 2>/dev/null | sed 's/v//' | cut -d. -f1)
 if [ -z "$NODE_VER" ]; then
-  echo -e "${RED}❌ Node.js not found. Please install Node.js >= 18 from https://nodejs.org${NC}"
+  echo -e "${RED}❌ Node.js not found. Please install Node.js >= 22 from https://nodejs.org${NC}"
   exit 1
 fi
-if [ "$NODE_VER" -lt 18 ]; then
-  echo -e "${RED}❌ Node.js v${NODE_VER} found. Please upgrade to >= 18 (v22 recommended for built-in SQLite)${NC}"
+if [ "$NODE_VER" -lt 22 ]; then
+  echo -e "${RED}❌ Node.js v${NODE_VER} found. Please upgrade to >= 22 for built-in SQLite support${NC}"
   exit 1
 fi
 echo -e "${GREEN}✅ Node.js v$(node -v | sed 's/v//')${NC}"
-
-# Check if node:sqlite is available (Node 22+)
-SQLITE_FLAG=""
-node --experimental-sqlite -e "require('node:sqlite')" 2>/dev/null && SQLITE_FLAG="--experimental-sqlite" || true
-if [ -z "$SQLITE_FLAG" ]; then
-  echo -e "${YELLOW}⚠  Node < 22 detected — node:sqlite not available. Upgrade to Node 22 for built-in SQLite.${NC}"
-  exit 1
-fi
-echo -e "${GREEN}✅ node:sqlite available${NC}"
 
 # Install backend deps
 echo ""
@@ -45,7 +36,7 @@ cd ..
 if [ ! -f "backend/data/siem.db" ]; then
   echo ""
   echo -e "${YELLOW}🌱 Seeding database with demo data...${NC}"
-  cd backend && node $SQLITE_FLAG src/utils/seed.js 2>&1 | grep -v ExperimentalWarning | grep -v "Use \`node"
+  cd backend && node src/utils/seed.js
   cd ..
   echo -e "${GREEN}✅ Database seeded${NC}"
 else
@@ -65,7 +56,7 @@ echo -e "${YELLOW}Press Ctrl+C to stop both servers${NC}"
 echo ""
 
 # Start backend in background
-cd backend && node $SQLITE_FLAG src/index.js 2>&1 | grep -v ExperimentalWarning &
+cd backend && node src/index.js &
 BACKEND_PID=$!
 cd ..
 

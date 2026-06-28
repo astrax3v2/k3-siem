@@ -12,8 +12,10 @@ const path       = require('path');
 
 const { initDb }            = require('./models/db');
 const { startIngestion, registerWsClient } = require('./services/ingestion');
+const { startAgentMonitor } = require('./services/agentMonitor');
 const authRouter   = require('./routes/auth');
 const eventsRouter = require('./routes/events');
+const agentsRouter = require('./routes/agents');
 const apiRouter    = require('./routes/api');
 
 const app  = express();
@@ -29,6 +31,7 @@ app.use(rateLimit({ windowMs: 15*60*1000, max: 1000 }));
 
 app.use('/api/auth',   authRouter);
 app.use('/api/events', eventsRouter);
+app.use('/api/agents', agentsRouter);
 app.use('/api',        apiRouter);
 
 if (process.env.NODE_ENV === 'production') {
@@ -48,8 +51,9 @@ wss.on('connection', (ws, req) => {
 async function start() {
   await initDb();
   startIngestion(parseInt(process.env.LOG_INGEST_INTERVAL) || 3000);
+  startAgentMonitor();
   server.listen(PORT, () => {
-    console.log(`\n🛡️  K3 SIEM Backend`);
+    console.log(`\n🛡️  K3 SIEM Backend v2.0`);
     console.log(`   API  → http://localhost:${PORT}/api`);
     console.log(`   WS   → ws://localhost:${PORT}/ws`);
     console.log(`   Run 'npm run seed' to load demo data\n`);

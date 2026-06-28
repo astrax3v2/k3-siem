@@ -1,7 +1,7 @@
 {
   "name": "k3-siem",
-  "version": "1.0.0",
-  "description": "K3 SIEM Platform - Full Stack",
+  "version": "2.0.0",
+  "description": "K3 SIEM Platform - Enterprise Security Operations",
   "scripts": {
     "install:all": "cd backend && npm install && cd ../frontend && npm install",
     "seed": "cd backend && npm run seed",
