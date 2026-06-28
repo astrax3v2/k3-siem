@@ -1,0 +1,33 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: k3_siem
+      POSTGRES_USER: k3
+      POSTGRES_PASSWORD: k3_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      DB_CLIENT: postgres
+      DATABASE_URL: postgresql://k3:k3_password@db:5432/k3_siem
+      JWT_SECRET: change-me
+      CORS_ORIGIN: "*"
+      LOG_INGEST_INTERVAL: "3000"
+      INGEST_API_KEY: "k3-ingest-key"
+
+volumes:
+  postgres_data:
