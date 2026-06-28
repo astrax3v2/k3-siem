@@ -1,88 +1,315 @@
-# K3 SIEM Platform
+<p align="center">
+  <img src="https://img.shields.io/badge/K3-SIEM-gold?style=for-the-badge&labelColor=0d1117" alt="K3 SIEM" />
+  <img src="https://img.shields.io/badge/version-2.0-blue?style=for-the-badge&labelColor=0d1117" alt="Version" />
+  <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge&labelColor=0d1117" alt="License" />
+</p>
 
-**Enterprise Security Operations Platform — K3 SIEM v2.0**
+<h1 align="center">🛡️ K3 SIEM Platform</h1>
 
-A full-stack SIEM with agent-based log collection, real-time correlation, and incident response — inspired by SentinelOne and Microsoft Sentinel.
+<p align="center">
+  <strong>Enterprise Security Information & Event Management</strong><br/>
+  Real-time threat detection · Agent-based log collection · Incident response · SOAR automation
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Node.js-22-339933?logo=nodedotjs&logoColor=white" />
+  <img src="https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white" />
+  <img src="https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white" />
+  <img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" />
+  <img src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white" />
+  <img src="https://img.shields.io/badge/WebSocket-Live-brightgreen?logo=socketdotio&logoColor=white" />
+</p>
 
 ---
 
-## Architecture
+## 📋 Table of Contents
+
+- [Overview](#-overview)
+- [Features](#-features)
+- [Architecture](#-architecture)
+- [Quick Start](#-quick-start)
+- [Dashboard & Modules](#-dashboard--modules)
+- [Agent System](#-agent-system)
+- [API Reference](#-api-reference)
+- [Configuration](#-configuration)
+- [Login Credentials](#-login-credentials)
+- [Tech Stack](#-tech-stack)
+
+---
+
+## 🔭 Overview
+
+K3 SIEM is a full-stack **Security Information and Event Management** platform inspired by **Microsoft Sentinel** and **SentinelOne**. It provides real-time security monitoring, threat detection, incident response, and automated playbook execution — all from a unified dark-themed security operations interface.
+
+### What Makes K3 SIEM Different
+
+| Feature | Description |
+|---------|-------------|
+| 🕵️ **Agent-Based Collection** | Deploy Python agents on real endpoints (Windows/Linux/Network) to collect and forward logs |
+| ⚡ **Real-Time Streaming** | WebSocket-powered live event and alert feeds — zero polling |
+| 🔍 **KQL Query Engine** | Kusto Query Language transpiled to SQL for threat hunting |
+| 🤖 **SOAR Automation** | Execute playbooks with step-by-step progress tracking |
+| 🧠 **UEBA Analytics** | ML-inspired user behavior analytics with anomaly scoring |
+| 🎯 **MITRE ATT&CK Mapping** | Every alert mapped to MITRE tactics and techniques |
+
+---
+
+## ✨ Features
+
+### 📊 Security Operations Dashboard
+- **4 KPI Tiles** — Alerts (24h) with critical count, Open Incidents, Events Indexed (24h), SOAR Executions
+- **14-Day Alert Trend** — Area chart showing alert volume over time
+- **Severity Distribution** — Bar chart breakdown (Critical / High / Medium / Low / Info)
+- **⚡ Live Alert Feed** — Real-time WebSocket stream of the latest 5 security alerts with MITRE technique tags
+- **📡 Live Event Stream** — Top 10 raw events streaming live with green pulse indicator
+- **🎯 Top MITRE Tactics** — Ranked breakdown of MITRE ATT&CK tactics across all alerts
+- **📊 Alert Status Summary** — New / Assigned / In Progress / Closed counts
+- **🔢 Platform Stats** — IOC Hits, High-Risk Users, Active Sources, Indexed Indices
+
+### 🚨 Alert Manager
+- **Severity Filters** — Quick filter buttons: All, Critical, High, Medium, Low
+- **Status Dropdown** — Filter by New, Assigned, In Progress, Closed
+- **Free-Text Search** — Search across alert title, asset, username, IP
+- **Alert Table** — ID, Severity badge, Title, Asset, MITRE Tactic, Risk Score (progress bar), Status, Timestamp
+- **Pagination** — 25 alerts per page with prev/next navigation
+- **Live Alert Integration** — New alerts from WebSocket prepended with deduplication
+- **Detail Panel** — Click any row to open side panel with:
+  - Full alert metadata display
+  - Status update buttons (New → Assigned → In Progress → Closed)
+  - "Create Incident" button to escalate
+  - Risk score visualization bar
+
+### 🧯 Incident Response
+- **Create Incidents** — Form with title, description, severity (Critical/High/Medium/Low), priority (P1-P4)
+- **Create from Alert** — One-click incident creation from any alert
+- **Incident List** — Filterable by status, severity, search with alert/note counts
+- **6-Stage Status Workflow** — Open → In Progress → Contained → Eradicated → Recovered → Closed
+- **Detail Panel** includes:
+  - Incident metadata (severity, priority, status, owner)
+  - Status progression buttons
+  - **Linked Alerts Table** — All associated security alerts
+  - **Notes Section** — Add timestamped investigation notes with author tracking
+
+### 📋 Event Explorer
+- **50 events per page** with pagination
+- **Filters**: Free-text search (user/computer/IP/action), severity dropdown, index selector
+- **5 Log Indices**: `windows-security`, `linux-syslog`, `network-flow`, `endpoint-edr`, `cloud-identity`
+- **Live Event Overlay** — Top 10 new events highlighted in green with streaming indicator
+- **Columns**: Timestamp, Index badge, Source, Event ID (gold monospace), Computer, User, Action, IP, Severity badge
+- **Total Count** display with refresh button
+
+### 🔍 KQL Query Engine
+- **Three Tabs**: Editor, Results, Saved Queries
+- **Query Editor** — Monospace text area with dark theme
+- **Sample Queries** — Quick-load buttons for common threat hunting queries
+- **Supported KQL Operators**:
+  - `| where event_id == "4625"` — Exact match
+  - `| where severity == "Critical"` — Severity filter
+  - `| where timestamp > datetime_ago("5m")` — Time window (m/h/d)
+  - `| where action has_any ("PowerShell", "bypass")` — OR text search
+  - `| where username != "SYSTEM"` — Negation
+  - `| where agent_id == "..."` — Filter by agent
+  - `| top 10` — Limit results
+  - `| project timestamp, computer...` — Column selection (planned)
+- **Results Table** — Query output with execution time and row count
+- **Saved Queries** — Save queries as reusable detection rules with categories
+- **Quick Reference Guide** — Built-in KQL syntax help panel
+
+### 🔗 Correlation Engine
+- **Stats**: Active Rules count, Total Hits (all time), Multi-Index Rules count
+- **Create Rules** — Name, correlation logic, severity, risk score (0-100), time window (minutes)
+- **Rules Table**: Name + logic description, Severity badge, Risk score bar, Window, Index badges, Hit count, Enable/Disable toggle
+- **Multi-Index Correlation** — Rules span across `windows-security`, `network-flow`, etc.
+- **Built-in Detection Rules**:
+  - 🔐 Brute Force Detection (3+ failed logins in 5 min)
+  - 🔄 Lateral Movement via RDP
+  - 📤 Data Exfiltration (high volume outbound)
+  - 🦠 Malware Execution Chain
+  - 👤 Account Takeover Pattern
+  - 🎫 Kerberoasting Attack
+- **RBAC** — Only admin/t2_analyst can create or toggle rules
+
+### 🔴 Threat Intelligence
+- **IOC Stats**: Total IOCs, Active Hits, Intel Feeds count, Average Confidence %
+- **Type Filters** — All, IP, Domain, Hash, URL, Email
+- **Add IOC Form** — Type, value, confidence (0-100%), severity, source, description
+- **IOC Table**: Type badge, Indicator (monospace), Confidence bar, Severity, Hits (red if >10), Source, First Seen
+- **📡 Feed Status Panel** — Feed name, IOC count, active/inactive indicator
+  - MISP, VirusTotal, AbuseIPDB, OTX AlienVault, Recorded Future, NVD NIST
+- **🗺️ Threat Origins** — Geographic breakdown: Russia, China, N. Korea, Iran, Anonymous
+
+### 👤 UEBA (User & Entity Behavior Analytics)
+- **Stats**: High Risk Users, Total Anomalies, Users Monitored
+- **Sort Options**: Risk Score, Anomalies, Name
+- **User Risk Table**: Username, Department, Risk Score (color-coded bar), Anomaly count badge, Behavior flags, Location, Last Active
+- **🧠 ML Baseline Deviations**:
+  - Login Time Anomaly — Off-hours access detection
+  - Geo-Velocity — Impossible travel detection
+  - Peer Group Deviation — File access pattern outliers
+  - Data Volume Spike — Download volume exceeding 30-day baseline
+
+### ⚙️ SOAR (Security Orchestration, Automation & Response)
+- **Stats**: Active Playbooks, Total Executions, Avg Response Time, Recent Executions
+- **Playbook Grid** (2 columns):
+  - Name + status badge (Active/Paused) + execution count
+  - Trigger condition display
+  - **Live Execution Progress** — Step-by-step progress bar with completion percentage
+  - Numbered step circles (completed = green checkmark ✓)
+  - Execute / Edit buttons (role-gated)
+- **Built-in Playbooks**:
+  - 🔐 Brute Force Response — Block IP, reset password, create ticket, notify SOC
+  - 🦠 Malware Containment — Isolate endpoint, collect forensics, block hash, alert team
+  - 🎣 Phishing Response — Extract IOCs, block sender, scan mailboxes, update filters
+  - 🔑 Privilege Escalation — Revoke tokens, audit access, reset credentials, review logs
+- **🔗 Integration Connectors** (8):
+  - Jira (ticket creation), Slack (SOC notifications), CrowdStrike (endpoint isolation)
+  - Palo Alto (firewall block), ServiceNow (ITSM), MS Teams (notifications)
+  - MISP (IOC sharing), Email (analyst alerts)
+- **📋 Execution History** — Playbook ID, triggered by, status, steps completed, timestamps
+
+### 🖥️ Agent Management
+- **Agent Stats**: Total Agents, Online (green), Stale (yellow), Offline (red), Events Collected
+- **Agent Table**: Status (pulsing dot), Hostname, OS (with icon 🪟🐧🔥), IP, Version, Events Sent, Last Heartbeat, Registered
+- **Status Computation**: Online (<60s), Stale (1-5min), Offline (>5min) — computed from heartbeat
+- **Detail Panel**: Agent ID, OS info, collected sources, tags, recent events feed
+- **Auto-Alerting**: High severity alert generated when agent goes offline (Defense Evasion tactic)
+- **Admin Controls**: Remove agent button (admin only), update tags/config (admin/t2)
+
+---
+
+## 🏗️ Architecture
 
 ```
 k3-siem/
-├── backend/                    # Node.js + Express API
-│   ├── src/
-│   │   ├── index.js            # Entry point + WebSocket server
-│   │   ├── models/
-│   │   │   └── db.js           # Dual-dialect DB (SQLite + PostgreSQL)
-│   │   ├── routes/
-│   │   │   ├── auth.js         # JWT auth (login, /me)
-│   │   │   ├── events.js       # Log ingestion, KQL engine, event CRUD
-│   │   │   ├── agents.js       # Agent registration, heartbeat, management
-│   │   │   └── api.js          # Alerts, IOCs, Correlation, SOAR, UEBA, KQL
-│   │   ├── services/
-│   │   │   ├── ingestion.js    # Live log simulation + alert correlation
-│   │   │   └── agentMonitor.js # Agent health monitoring
-│   │   ├── middleware/
-│   │   │   └── auth.js         # JWT middleware + RBAC
-│   │   └── utils/
-│   │       └── seed.js         # Demo data seeder
-│   └── data/                   # SQLite database (auto-created, local dev)
 │
-├── frontend/                   # React 18 SPA
+├── 🔧 backend/                         # Node.js + Express API Server
+│   ├── src/
+│   │   ├── index.js                     # Express + WebSocket + startup
+│   │   ├── models/
+│   │   │   └── db.js                    # Dual-dialect DB (SQLite + PostgreSQL)
+│   │   ├── routes/
+│   │   │   ├── auth.js                  # 🔐 JWT authentication (login, /me)
+│   │   │   ├── events.js               # 📋 Log ingestion + KQL engine
+│   │   │   ├── agents.js               # 🖥️ Agent registration + management
+│   │   │   └── api.js                   # 🛡️ Alerts, IOCs, SOAR, UEBA, Incidents
+│   │   ├── services/
+│   │   │   ├── ingestion.js             # ⚡ Live event generation + correlation
+│   │   │   └── agentMonitor.js          # 💓 Agent health monitoring
+│   │   ├── middleware/
+│   │   │   └── auth.js                  # 🔑 JWT middleware + RBAC
+│   │   └── utils/
+│   │       └── seed.js                  # 🌱 Demo data seeder
+│   └── data/                            # SQLite database (local dev)
+│
+├── 🎨 frontend/                         # React 18 SPA
 │   └── src/
 │       ├── components/
-│       │   ├── Dashboard/      # KPI tiles, charts, live feeds
-│       │   ├── Alerts/         # Alert management + detail panel
-│       │   ├── Agents/         # Agent management (status, events, detail)
-│       │   ├── KQL/            # KQL query editor + results
-│       │   ├── Layout/         # Topbar, sidebar, auth
-│       │   └── Pages.jsx       # Events, Incidents, Correlation, Intel, UEBA, SOAR
-│       ├── hooks/              # WebSocket hook
-│       └── services/           # API client (Axios)
+│       │   ├── Dashboard/Dashboard.jsx  # 📊 KPI tiles, charts, live feeds
+│       │   ├── Alerts/AlertManager.jsx  # 🚨 Alert table + detail panel
+│       │   ├── Agents/AgentManager.jsx  # 🖥️ Agent management UI
+│       │   ├── KQL/KQLEngine.jsx        # 🔍 Query editor + results
+│       │   ├── Layout/Layout.jsx        # 📐 Topbar + sidebar navigation
+│       │   ├── Layout/Auth.jsx          # 🔐 Login + auth context
+│       │   └── Pages.jsx                # 📄 Events, Incidents, Correlation,
+│       │                                #    Threat Intel, UEBA, SOAR
+│       ├── hooks/useWebSocket.js        # 🔌 WebSocket connection hook
+│       └── services/api.js              # 📡 Axios API client
 │
-├── k3-agent/                   # Python endpoint agent
-│   ├── agent.py                # Cross-platform log collector
-│   ├── config.yaml             # Agent configuration
-│   ├── requirements.txt        # Python dependencies
-│   └── Dockerfile              # Agent container image
+├── 🐍 k3-agent/                         # Python Endpoint Agent
+│   ├── agent.py                         # 🕵️ Cross-platform log collector
+│   ├── config.yaml                      # ⚙️ Agent configuration
+│   ├── requirements.txt                 # 📦 Python dependencies
+│   └── Dockerfile                       # 🐳 Agent container image
 │
-├── docker-compose.yml          # PostgreSQL + App + 3 Agent containers
-├── Dockerfile                  # Multi-stage Node.js build
-├── start.bat / start.sh        # Local development startup
-└── package.json                # Workspace root
+├── 🐳 docker-compose.yml               # PostgreSQL + App + 3 Agents
+├── 🐳 Dockerfile                        # Multi-stage Node.js build
+├── 🪟 start.bat                         # Windows dev startup
+├── 🐧 start.sh                          # Linux/Mac dev startup
+└── 📦 package.json                      # Workspace root
+```
+
+### System Flow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        ENDPOINTS                                 │
+│                                                                   │
+│  🪟 Windows Agent     🐧 Linux Agent      🔥 Network Agent      │
+│  (WS-PC-001)          (SRV-UBUNTU-01)     (FW-PALOALTO-01)      │
+│  Event Logs           syslog / auth.log    Firewall logs          │
+│  CrowdStrike EDR      OSSEC HIDS           Cisco ASA              │
+└──────┬─────────────────────┬──────────────────────┬──────────────┘
+       │                     │                      │
+       │     HTTP POST /api/events/ingest           │
+       │     + X-Api-Key + X-Agent-Id               │
+       └──────────────────┬──┬──────────────────────┘
+                          │  │
+                    ┌─────▼──▼─────┐
+                    │  K3 SIEM API  │
+                    │  (Express)    │
+                    │              │
+                    │ ┌──────────┐ │    ┌──────────────┐
+                    │ │ Ingest   │─┼───▶│ PostgreSQL   │
+                    │ │ Engine   │ │    │ / SQLite     │
+                    │ └──────────┘ │    └──────────────┘
+                    │ ┌──────────┐ │
+                    │ │Correlate │ │◀── Brute Force / PowerShell /
+                    │ │ Engine   │ │    Privilege Escalation rules
+                    │ └──────────┘ │
+                    │ ┌──────────┐ │
+                    │ │Agent Mon │ │◀── Offline detection + alerting
+                    │ └──────────┘ │
+                    └──────┬───────┘
+                           │ WebSocket /ws
+                    ┌──────▼───────┐
+                    │  React SPA   │
+                    │  Dashboard   │
+                    │  Alerts      │
+                    │  Agents      │
+                    │  KQL Engine  │
+                    │  Incidents   │
+                    │  SOAR        │
+                    └──────────────┘
 ```
 
 ---
 
-## Quick Start
+## 🚀 Quick Start
 
-### Local Development (SQLite)
-
-```bash
-# Windows
-start.bat
-
-# Linux/Mac
-chmod +x start.sh && ./start.sh
-```
-
-Requires Node.js >= 22. Starts backend on port 3001, frontend on port 3000.
-
-### Docker (PostgreSQL + Agents)
+### Option 1: Docker (Recommended)
 
 ```bash
+git clone https://github.com/astrax3v2/k3-siem.git
+cd k3-siem
 docker-compose up --build
 ```
 
-This starts:
-- **PostgreSQL 16** — production database
-- **K3 SIEM App** — backend + frontend on port 3001
-- **3 Simulated Agents** — Windows, Linux, Network endpoints
+This starts **5 containers**:
+| Container | Description | Port |
+|-----------|-------------|------|
+| 🐘 `db` | PostgreSQL 16 database | 5432 (internal) |
+| 🛡️ `app` | K3 SIEM backend + frontend | **3001** |
+| 🪟 `agent-windows` | Simulated Windows endpoint (WS-PC-001) | — |
+| 🐧 `agent-linux` | Simulated Linux server (SRV-UBUNTU-01) | — |
+| 🔥 `agent-network` | Simulated network device (FW-PALOALTO-01) | — |
 
-Open http://localhost:3001 after startup.
+Open **http://localhost:3001** → Login with `pbasnet` / `K3@2026`
 
-### Deploy Real Agents
+### Option 2: Local Development (SQLite)
+
+```bash
+# Requires Node.js >= 22
+
+# Windows
+start.bat
+
+# Linux / Mac
+chmod +x start.sh && ./start.sh
+```
+
+Backend starts on `:3001`, frontend on `:3000`.
+
+### Option 3: Deploy Real Agents
 
 ```bash
 cd k3-agent
@@ -91,107 +318,276 @@ pip install -r requirements.txt
 # Collect real logs from this machine
 python agent.py --config config.yaml
 
-# Or simulate an endpoint
+# Simulate a Windows endpoint
 python agent.py --simulate --simulate-os windows
-```
 
-Configure `config.yaml` or environment variables:
-- `K3_SIEM_URL` — SIEM backend URL
-- `K3_API_KEY` — Ingest API key
-- `K3_HOSTNAME` — Override hostname
-- `K3_SIMULATE` — Enable simulation mode
-- `K3_SIMULATE_OS` — Simulate: windows, linux, network
+# Simulate a Linux server
+python agent.py --simulate --simulate-os linux
 
----
-
-## Login Credentials
-
-| Username | Password | Role | Full Name |
-|----------|----------|------|-----------|
-| pbasnet | K3@2026 | Admin | Prem Basnet |
-| jmaharjan | K3@2026 | T2 Analyst | Jenan Maharjan |
-| bpaudel | K3@2026 | T2 Analyst | Bamdev Paudel |
-| analyst1 | K3@2026 | T1 Analyst | SOC Analyst |
-
----
-
-## Features
-
-### Agent System
-- **Cross-platform agents** — Collect Windows Event Logs, Linux syslog/auth, network device logs
-- **Agent registration & heartbeat** — Agents self-register and send heartbeats every 30s
-- **Agent management UI** — View all agents, status (online/stale/offline), events, detail panel
-- **Simulation mode** — Docker containers simulate Windows, Linux, and network endpoints
-- **Auto-alerting** — Alerts generated when agents go offline
-
-### Core SIEM
-- **Real-time streaming** — WebSocket live feed of events and alerts
-- **KQL query engine** — Kusto-style query language transpiled to SQL
-- **Alert correlation** — Brute force, PowerShell exec, privilege escalation detection
-- **MITRE ATT&CK mapping** — Tactics and techniques on all alerts
-- **Incident response** — Create incidents, link alerts, add notes, status workflow
-
-### Modules
-- **Threat Intelligence** — IOC management with confidence scoring
-- **Correlation Rules** — Custom detection rules with risk scoring
-- **SOAR Playbooks** — Automated response with step-by-step execution
-- **UEBA** — User risk scoring with anomaly detection
-- **Saved Queries** — KQL queries saved as detection rules
-
-### Infrastructure
-- **Dual database** — SQLite for local dev, PostgreSQL for production
-- **Docker deployment** — Multi-stage build, health checks, persistent volumes
-- **JWT + RBAC** — Role-based access (admin, t2_analyst, t1_analyst)
-- **Dark theme UI** — Professional security operations interface
-
----
-
-## API Endpoints
-
-### Agent API
-```
-POST   /api/agents/register         Agent self-registration (API key auth)
-POST   /api/agents/:id/heartbeat    Agent heartbeat (API key auth)
-GET    /api/agents                   List all agents (JWT auth)
-GET    /api/agents/stats             Agent statistics (JWT auth)
-GET    /api/agents/:id               Agent detail + recent events
-PATCH  /api/agents/:id               Update agent tags/config (admin/t2)
-DELETE /api/agents/:id               Remove agent (admin only)
-```
-
-### Log Ingest
-```
-POST   /api/events/ingest            Bulk log ingestion (API key + X-Agent-Id header)
-```
-
-### Auth
-```
-POST   /api/auth/login               Login → JWT token
-GET    /api/auth/me                   Current user info
+# Simulate a network device
+python agent.py --simulate --simulate-os network
 ```
 
 ---
 
-## Environment Variables
+## 📸 Dashboard & Modules
+
+### 📊 Dashboard
+| Section | Details |
+|---------|---------|
+| **KPI Tiles** | Alerts (24h) · Open Incidents · Events Indexed · SOAR Executions |
+| **Alert Trend Chart** | 14-day area chart with gradient fill |
+| **Severity Chart** | Bar chart: Critical (red), High (orange), Medium (blue), Low (green) |
+| **Live Alert Feed** | Real-time WebSocket stream with MITRE technique badges |
+| **Live Event Stream** | Raw events with green pulse animation |
+| **MITRE Tactics** | Ranked breakdown with horizontal progress bars |
+| **Alert Status** | New / Assigned / In Progress / Closed counts |
+| **Platform Stats** | IOC Hits · High-Risk Users · Active Sources · Indexed Indices |
+
+### 🚨 Alert Manager
+| Feature | Details |
+|---------|---------|
+| **Filters** | Severity buttons · Status dropdown · Free-text search |
+| **Table Columns** | Severity badge · Title · Asset · MITRE Tactic · Risk Score bar · Status · Time |
+| **Detail Panel** | Full metadata · Status update buttons · Create Incident · Risk visualization |
+| **Live Updates** | New alerts prepended via WebSocket with deduplication |
+
+### 🖥️ Agent Manager
+| Feature | Details |
+|---------|---------|
+| **Stats Row** | Total · Online (🟢) · Stale (🟡) · Offline (🔴) · Events Collected |
+| **Agent Table** | Status dot · Hostname · OS icon · IP · Version · Events · Heartbeat · Registered |
+| **Detail Panel** | Agent ID · OS · IP · Sources · Tags · Recent 10 events feed |
+| **Health Monitor** | Auto-marks offline after 5 min · Creates High severity alert |
+
+### 🔍 KQL Engine
+| Feature | Details |
+|---------|---------|
+| **Editor** | Dark monospace textarea with sample query buttons |
+| **Operators** | `where`, `has_any`, `datetime_ago`, `!=`, `==`, `top`, `project` |
+| **Results** | Table output with execution time (ms) and row count |
+| **Saved Queries** | Persist as detection rules with categories |
+
+### 🧯 Incident Response
+| Feature | Details |
+|---------|---------|
+| **Create** | Title · Description · Severity · Priority (P1-P4) |
+| **Workflow** | Open → In Progress → Contained → Eradicated → Recovered → Closed |
+| **Detail** | Metadata · Linked alerts table · Investigation notes with timestamps |
+
+### ⚙️ SOAR Playbooks
+| Feature | Details |
+|---------|---------|
+| **Playbooks** | Brute Force · Malware · Phishing · Privilege Escalation |
+| **Execution** | Live progress bar · Step checkmarks · Completion message |
+| **Connectors** | Jira · Slack · CrowdStrike · Palo Alto · ServiceNow · Teams · MISP · Email |
+
+### 🔴 Threat Intelligence
+| Feature | Details |
+|---------|---------|
+| **IOC Types** | IP · Domain · Hash · URL · Email with type badges |
+| **Feeds** | MISP · VirusTotal · AbuseIPDB · OTX · Recorded Future · NVD NIST |
+| **Metrics** | Confidence bars · Hit counts · Threat origin map |
+
+### 👤 UEBA
+| Feature | Details |
+|---------|---------|
+| **Risk Scoring** | 0-100 color-coded bars (green → orange → red) |
+| **Anomaly Detection** | Login time · Geo-velocity · Peer group · Data volume |
+| **Flags** | Behavior flags per user with anomaly count badges |
+
+---
+
+## 🕵️ Agent System
+
+### How It Works
+
+1. **Agent starts** → Registers with SIEM via `POST /api/agents/register`
+2. **Heartbeat loop** → Sends heartbeat every 30s via `POST /api/agents/:id/heartbeat`
+3. **Collection loop** → Collects logs every 8-15s based on OS detection
+4. **Normalization** → Maps OS-specific log formats to unified SIEM schema
+5. **Ingestion** → Batch `POST /api/events/ingest` with `X-Agent-Id` header
+6. **Monitoring** → Backend checks heartbeats every 60s, marks offline after 5 min
+
+### Supported Log Sources
+
+| Platform | Sources | Method |
+|----------|---------|--------|
+| 🪟 **Windows** | Security, System, Application Event Logs | `wevtutil` / PowerShell |
+| 🐧 **Linux** | syslog, auth.log, secure | `journalctl` / file tailing |
+| 🔥 **Network** | Firewall, IDS, DNS, VPN | Simulated (extensible) |
+| ☁️ **Cloud** | Azure AD, AWS CloudTrail | Simulated (extensible) |
+
+### Simulation Profiles
+
+| Profile | Hostname | OS | Sample Actions |
+|---------|----------|----|----------------|
+| `windows` | WS-PC-001 | Windows 11 Pro | User Logon, Failed Logon, PowerShell Exec, Service Install |
+| `linux` | SRV-UBUNTU-01 | Ubuntu 24.04 LTS | SSH Login, Sudo Command, Cron Execution, Package Install |
+| `network` | FW-PALOALTO-01 | PAN-OS 11.1 | Traffic Allow/Deny, IDS Alert, Port Scan, DDoS Attempt |
+
+### Agent Configuration
+
+```yaml
+# k3-agent/config.yaml
+siem_url: http://localhost:3001
+api_key: k3-ingest-key
+agent_version: "1.0.0"
+collection_interval: 10    # seconds between collection cycles
+heartbeat_interval: 30     # seconds between heartbeats
+batch_size: 50             # max events per batch
+sources:
+  - windows_security
+  - windows_system
+  - linux_syslog
+  - linux_auth
+simulate: false
+```
+
+### Environment Variables (Agent)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| PORT | 3001 | Backend port |
-| NODE_ENV | development | Environment |
-| JWT_SECRET | (required) | JWT signing key |
-| DB_CLIENT | sqlite | `postgres` for PostgreSQL |
-| DATABASE_URL | - | PostgreSQL connection string |
-| DB_PATH | ./data/siem.db | SQLite database path |
-| LOG_INGEST_INTERVAL | 3000 | Synthetic event generation (ms) |
-| INGEST_API_KEY | k3-ingest-key | API key for agent ingest |
-| CORS_ORIGIN | * | CORS allowed origins |
+| `K3_SIEM_URL` | `http://localhost:3001` | SIEM backend URL |
+| `K3_API_KEY` | `k3-ingest-key` | Ingest API key |
+| `K3_HOSTNAME` | System hostname | Override agent hostname |
+| `K3_SIMULATE` | `false` | Enable simulation mode |
+| `K3_SIMULATE_OS` | — | Simulation profile: `windows`, `linux`, `network` |
+| `K3_COLLECTION_INTERVAL` | `10` | Seconds between log collection |
+| `K3_HEARTBEAT_INTERVAL` | `30` | Seconds between heartbeats |
 
 ---
 
-## Tech Stack
+## 📡 API Reference
 
-- **Backend**: Node.js 22, Express 4, WebSocket (ws), PostgreSQL/SQLite
-- **Frontend**: React 18, React Router 6, Recharts, Axios
-- **Agent**: Python 3.12, requests, psutil, PyYAML
-- **Database**: PostgreSQL 16 (production), SQLite (development)
-- **Deployment**: Docker, Docker Compose
+### 🔐 Authentication
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `POST` | `/api/auth/login` | None | Login → JWT token (12h expiry) |
+| `GET` | `/api/auth/me` | JWT | Current user info |
+
+### 🖥️ Agents
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `POST` | `/api/agents/register` | API Key | Agent self-registration (upsert) |
+| `POST` | `/api/agents/:id/heartbeat` | API Key | Agent heartbeat update |
+| `GET` | `/api/agents` | JWT | List all agents with computed status |
+| `GET` | `/api/agents/stats` | JWT | Agent statistics (online/stale/offline) |
+| `GET` | `/api/agents/:id` | JWT | Agent detail + recent events |
+| `PATCH` | `/api/agents/:id` | JWT (admin/t2) | Update agent tags/config |
+| `DELETE` | `/api/agents/:id` | JWT (admin) | Remove agent |
+
+### 📋 Events
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `GET` | `/api/events` | JWT | Paginated events (50/page) with filters |
+| `GET` | `/api/events/stats` | JWT | Event statistics and counts |
+| `POST` | `/api/events/ingest` | API Key | Bulk log ingestion from agents |
+| `POST` | `/api/events/kql` | JWT | Execute KQL query |
+
+### 🚨 Alerts
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `GET` | `/api/alerts` | JWT | Paginated alerts (25/page) |
+| `GET` | `/api/alerts/stats` | JWT | Severity, status, tactic breakdown |
+| `GET` | `/api/alerts/:id` | JWT | Alert detail |
+| `PATCH` | `/api/alerts/:id` | JWT | Update status/analyst/risk |
+
+### 🧯 Incidents
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `GET` | `/api/incidents` | JWT | Paginated with filters |
+| `POST` | `/api/incidents` | JWT | Create new incident |
+| `POST` | `/api/incidents/from-alert/:id` | JWT | Create incident from alert |
+| `GET` | `/api/incidents/:id` | JWT | Detail + alerts + notes |
+| `PATCH` | `/api/incidents/:id` | JWT | Update status/severity/priority |
+| `POST` | `/api/incidents/:id/notes` | JWT | Add investigation note |
+| `POST` | `/api/incidents/:id/alerts` | JWT | Link alert to incident |
+
+### 🔗 Correlation · 🔴 Intel · ⚙️ SOAR · 👤 UEBA · 🔍 KQL
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `GET` | `/api/correlation/rules` | JWT | List correlation rules |
+| `POST` | `/api/correlation/rules` | JWT (t2+) | Create rule |
+| `PATCH` | `/api/correlation/rules/:id` | JWT (t2+) | Toggle enable/disable |
+| `GET` | `/api/intel/iocs` | JWT | List IOCs with filters |
+| `POST` | `/api/intel/iocs` | JWT (t2+) | Create IOC |
+| `GET` | `/api/intel/feeds` | JWT | List intel feeds |
+| `GET` | `/api/soar/playbooks` | JWT | List playbooks + executions |
+| `POST` | `/api/soar/playbooks/:id/execute` | JWT (t2+) | Execute playbook |
+| `GET` | `/api/soar/executions/:id` | JWT | Poll execution progress |
+| `GET` | `/api/ueba/scores` | JWT | User risk scores |
+| `GET` | `/api/kql/queries` | JWT | Saved queries |
+| `POST` | `/api/kql/queries` | JWT | Save query/detection rule |
+
+---
+
+## ⚙️ Configuration
+
+### Backend Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `3001` | Backend server port |
+| `NODE_ENV` | `development` | `production` for Docker |
+| `JWT_SECRET` | *(required)* | JWT signing secret |
+| `DB_CLIENT` | `sqlite` | Set to `postgres` for PostgreSQL |
+| `DATABASE_URL` | — | PostgreSQL connection string |
+| `DB_PATH` | `./data/siem.db` | SQLite database path |
+| `LOG_INGEST_INTERVAL` | `3000` | Synthetic event generation (ms) |
+| `INGEST_API_KEY` | `k3-ingest-key` | API key for agent authentication |
+| `CORS_ORIGIN` | `*` | CORS allowed origins |
+
+### Database Schema (Key Tables)
+
+| Table | Purpose | Key Fields |
+|-------|---------|------------|
+| `users` | Authentication & RBAC | username, role, password_hash |
+| `events` | Raw log storage | timestamp, source, event_id, severity, agent_id |
+| `alerts` | Security alerts | title, severity, mitre_tactic, risk_score, status |
+| `agents` | Registered agents | hostname, os, ip, status, last_heartbeat |
+| `incidents` | Incident cases | title, severity, status (6-stage), priority |
+| `incident_alerts` | Alert↔Incident links | incident_id, alert_id |
+| `incident_notes` | Investigation notes | author, note, timestamp |
+| `correlation_rules` | Detection rules | logic, severity, risk_score, window_minutes |
+| `playbooks` | SOAR automation | steps (JSON), trigger_condition, status |
+| `playbook_executions` | Execution tracking | status, steps_completed, result |
+| `iocs` | Threat indicators | type, value, confidence, hits |
+| `ueba_scores` | User risk profiles | risk_score, anomaly_count, flags |
+| `kql_saved_queries` | Saved KQL queries | query, category, is_rule |
+| `intel_feeds` | Threat feed sources | name, status, ioc_count |
+
+---
+
+## 🔑 Login Credentials
+
+| Username | Password | Role | Full Name | Permissions |
+|----------|----------|------|-----------|-------------|
+| `pbasnet` | `K3@2026` | 🔴 Admin | Prem Basnet | Full access — manage agents, rules, users |
+| `jmaharjan` | `K3@2026` | 🟠 T2 Analyst | Jenan Maharjan | Create rules, IOCs, execute playbooks |
+| `bpaudel` | `K3@2026` | 🟠 T2 Analyst | Bamdev Paudel | Create rules, IOCs, execute playbooks |
+| `analyst1` | `K3@2026` | 🟢 T1 Analyst | SOC Analyst | View-only, query, create incidents |
+
+---
+
+## 🧰 Tech Stack
+
+| Layer | Technology | Version |
+|-------|-----------|---------|
+| 🔧 **Backend** | Node.js + Express | 22 / 4.21 |
+| 🎨 **Frontend** | React + React Router | 18.3 / 6.30 |
+| 📊 **Charts** | Recharts | 2.15 |
+| 🔌 **Real-time** | WebSocket (ws) | 8.18 |
+| 🐘 **Database** | PostgreSQL (prod) / SQLite (dev) | 16 / built-in |
+| 🐍 **Agent** | Python + requests + psutil | 3.12 |
+| 🐳 **Deployment** | Docker + Docker Compose | Multi-stage |
+| 🔐 **Auth** | JWT + bcrypt | 12h tokens |
+| 📡 **HTTP Client** | Axios | 1.9 |
+| 📅 **Date Utils** | date-fns | 4.1 |
+
+---
+
+<p align="center">
+  <strong>Built with 🛡️ by the K3 Security Team</strong><br/>
+  <sub>Enterprise-grade SIEM for modern security operations</sub>
+</p>
