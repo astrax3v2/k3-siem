@@ -9,6 +9,7 @@ import { EventExplorer, IncidentResponse, Correlation, ThreatIntel, UEBA, SOAR }
 import AgentManager from './components/Agents/AgentManager';
 import AssetInventory from './components/Inventory/AssetInventory';
 import VulnerabilityScanner from './components/Inventory/VulnerabilityScanner';
+import OCSFParser from './components/OCSF/OCSFParser';
 import { useWebSocket } from './hooks/useWebSocket';
 import './index.css';
 
@@ -41,6 +42,7 @@ function ProtectedApp() {
         <Route path="/agents" element={<AgentManager />} />
         <Route path="/inventory" element={<AssetInventory />} />
         <Route path="/vulnerabilities" element={<VulnerabilityScanner />} />
+        <Route path="/ocsf" element={<OCSFParser />} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </Layout>

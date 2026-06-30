@@ -96,6 +96,14 @@ export const vulnApi = {
   forAsset: (agentId) => api.get(`/agents/assets/${agentId}/vulnerabilities`),
 };
 
+export const ocsfApi = {
+  parse: (raw) => api.post('/ocsf/parse', { raw }),
+  schema: () => api.get('/ocsf/schema'),
+  stats: () => api.get('/ocsf/stats'),
+  events: (params) => api.get('/ocsf/events', { params }),
+  event: (id) => api.get(`/ocsf/events/${id}`),
+};
+
 export const incidentsApi = {
   list: (params) => api.get('/incidents', { params }),
   create: (data) => api.post('/incidents', data),
