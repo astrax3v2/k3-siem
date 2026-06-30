@@ -264,6 +264,60 @@ function schemaSql() {
         last_heartbeat TIMESTAMPTZ DEFAULT NOW(),
         registered_at TIMESTAMPTZ DEFAULT NOW()
       );
+      CREATE TABLE IF NOT EXISTS deployments (
+        id TEXT PRIMARY KEY,
+        target_ip TEXT NOT NULL,
+        target_os TEXT NOT NULL,
+        target_user TEXT,
+        status TEXT DEFAULT 'pending',
+        logs TEXT,
+        created_by TEXT,
+        agent_id TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        completed_at TIMESTAMPTZ
+      );
+      CREATE TABLE IF NOT EXISTS assets (
+        id TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL,
+        hostname TEXT,
+        os_name TEXT,
+        os_version TEXT,
+        os_arch TEXT,
+        cpu_model TEXT,
+        cpu_cores INTEGER,
+        ram_total_gb REAL,
+        disk_total_gb REAL,
+        disk_used_gb REAL,
+        network_interfaces TEXT,
+        installed_software TEXT,
+        running_services TEXT,
+        open_ports TEXT,
+        local_users TEXT,
+        antivirus_status TEXT,
+        firewall_enabled INTEGER DEFAULT 0,
+        last_patch_date TEXT,
+        uptime_hours REAL,
+        domain TEXT,
+        serial_number TEXT,
+        collected_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS vulnerabilities (
+        id TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL,
+        cve_id TEXT NOT NULL,
+        software_name TEXT,
+        software_version TEXT,
+        software_type TEXT DEFAULT 'software',
+        description TEXT,
+        cvss_score REAL,
+        severity TEXT DEFAULT 'UNKNOWN',
+        published TEXT,
+        last_modified TEXT,
+        vuln_status TEXT,
+        scanned_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(agent_id, cve_id, software_name)
+      );
       CREATE INDEX IF NOT EXISTS idx_events_ts  ON events(timestamp);
       CREATE INDEX IF NOT EXISTS idx_events_sev ON events(severity);
       CREATE INDEX IF NOT EXISTS idx_events_agent ON events(agent_id);
@@ -274,6 +328,11 @@ function schemaSql() {
       CREATE INDEX IF NOT EXISTS idx_incidents_status ON incidents(status);
       CREATE INDEX IF NOT EXISTS idx_inc_notes_inc    ON incident_notes(incident_id);
       CREATE INDEX IF NOT EXISTS idx_agents_status    ON agents(status);
+      CREATE INDEX IF NOT EXISTS idx_deployments_status ON deployments(status);
+      CREATE INDEX IF NOT EXISTS idx_assets_agent ON assets(agent_id);
+      CREATE INDEX IF NOT EXISTS idx_vulns_agent ON vulnerabilities(agent_id);
+      CREATE INDEX IF NOT EXISTS idx_vulns_severity ON vulnerabilities(severity);
+      CREATE INDEX IF NOT EXISTS idx_vulns_cve ON vulnerabilities(cve_id);
     `;
   }
   return `
@@ -365,6 +424,60 @@ function schemaSql() {
       last_heartbeat TEXT DEFAULT (datetime('now')),
       registered_at TEXT DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS deployments (
+      id TEXT PRIMARY KEY,
+      target_ip TEXT NOT NULL,
+      target_os TEXT NOT NULL,
+      target_user TEXT,
+      status TEXT DEFAULT 'pending',
+      logs TEXT,
+      created_by TEXT,
+      agent_id TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      completed_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS assets (
+      id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL,
+      hostname TEXT,
+      os_name TEXT,
+      os_version TEXT,
+      os_arch TEXT,
+      cpu_model TEXT,
+      cpu_cores INTEGER,
+      ram_total_gb REAL,
+      disk_total_gb REAL,
+      disk_used_gb REAL,
+      network_interfaces TEXT,
+      installed_software TEXT,
+      running_services TEXT,
+      open_ports TEXT,
+      local_users TEXT,
+      antivirus_status TEXT,
+      firewall_enabled INTEGER DEFAULT 0,
+      last_patch_date TEXT,
+      uptime_hours REAL,
+      domain TEXT,
+      serial_number TEXT,
+      collected_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS vulnerabilities (
+      id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL,
+      cve_id TEXT NOT NULL,
+      software_name TEXT,
+      software_version TEXT,
+      software_type TEXT DEFAULT 'software',
+      description TEXT,
+      cvss_score REAL,
+      severity TEXT DEFAULT 'UNKNOWN',
+      published TEXT,
+      last_modified TEXT,
+      vuln_status TEXT,
+      scanned_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(agent_id, cve_id, software_name)
+    );
     CREATE INDEX IF NOT EXISTS idx_events_ts  ON events(timestamp);
     CREATE INDEX IF NOT EXISTS idx_events_sev ON events(severity);
     CREATE INDEX IF NOT EXISTS idx_events_agent ON events(agent_id);
@@ -375,6 +488,11 @@ function schemaSql() {
     CREATE INDEX IF NOT EXISTS idx_incidents_status ON incidents(status);
     CREATE INDEX IF NOT EXISTS idx_inc_notes_inc    ON incident_notes(incident_id);
     CREATE INDEX IF NOT EXISTS idx_agents_status    ON agents(status);
+    CREATE INDEX IF NOT EXISTS idx_deployments_status ON deployments(status);
+    CREATE INDEX IF NOT EXISTS idx_assets_agent ON assets(agent_id);
+    CREATE INDEX IF NOT EXISTS idx_vulns_agent ON vulnerabilities(agent_id);
+    CREATE INDEX IF NOT EXISTS idx_vulns_severity ON vulnerabilities(severity);
+    CREATE INDEX IF NOT EXISTS idx_vulns_cve ON vulnerabilities(cve_id);
   `;
 }
 

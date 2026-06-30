@@ -13,6 +13,8 @@ const NAV = [
   { path: '/ueba', icon: '👤', label: 'UEBA' },
   { path: '/soar', icon: '⚙️', label: 'SOAR' },
   { path: '/agents', icon: '🖥️', label: 'Agents' },
+  { path: '/inventory', icon: '📦', label: 'Inventory' },
+  { path: '/vulnerabilities', icon: '🛡️', label: 'Vulnerabilities' },
 ];
 
 export default function Layout({ children, connected, liveAlertCount = 0 }) {

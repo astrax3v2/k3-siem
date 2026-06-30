@@ -20,7 +20,22 @@ router.get('/dashboard/stats', authenticate, async (req, res) => {
     const cnt = (await d.prepare(`SELECT COUNT(*) as cnt FROM alerts WHERE ${sqlDate('created_at')} = ?`).get(date))?.cnt || 0;
     return { date, count: cnt };
   }));
-  res.json({ alerts, eventCount, uebaHigh, soarRuns, iocHits, trend });
+
+  const allAgents = await d.prepare('SELECT last_heartbeat FROM agents').all();
+  const now = Date.now();
+  let agOnline = 0, agOffline = 0;
+  for (const a of allAgents) {
+    const diff = now - new Date(a.last_heartbeat).getTime();
+    if (diff < 300000) agOnline++; else agOffline++;
+  }
+  const agentStats = { total: allAgents.length, online: agOnline, offline: agOffline };
+
+  const assetTotal = (await d.prepare('SELECT COUNT(*) as cnt FROM assets').get())?.cnt || 0;
+  const assetByOs = await d.prepare('SELECT os_name, COUNT(*) as cnt FROM assets GROUP BY os_name ORDER BY cnt DESC').all();
+  const assetCompliant = (await d.prepare("SELECT COUNT(*) as cnt FROM assets WHERE firewall_enabled = 1 AND antivirus_status != 'None' AND antivirus_status != 'Unknown'").get())?.cnt || 0;
+  const assetStats = { total: assetTotal, byOs: assetByOs, compliant: assetCompliant, compliancePercent: assetTotal > 0 ? Math.round((assetCompliant / assetTotal) * 100) : 0 };
+
+  res.json({ alerts, eventCount, uebaHigh, soarRuns, iocHits, trend, agentStats, assetStats });
 });
 
 // ── ALERTS ─────────────────────────────────────────────────────────────────

@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { agentsApi } from '../../services/api';
+import { agentsApi, deployApi } from '../../services/api';
 import { formatDistanceToNow } from 'date-fns';
 
 const STATUS_COLORS = { online: '#68d391', stale: '#f6ad55', offline: '#fc8181' };
+const DEP_STATUS_COLORS = { pending: '#f6ad55', deploying: '#90cdf4', success: '#68d391', failed: '#fc8181' };
 const OS_ICONS = { Windows: '🪟', Ubuntu: '🐧', Linux: '🐧', 'PAN-OS': '🔥', CentOS: '🐧', Debian: '🐧' };
 
 function getOsIcon(os) {
@@ -19,6 +20,12 @@ export default function AgentManager() {
   const [selected, setSelected] = useState(null);
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showDeploy, setShowDeploy] = useState(false);
+  const [deployForm, setDeployForm] = useState({ target_ip: '', target_os: 'linux', username: 'root', password: '' });
+  const [deploying, setDeploying] = useState(false);
+  const [deployments, setDeployments] = useState([]);
+  const [deployTab, setDeployTab] = useState('ssh');
+  const [installScript, setInstallScript] = useState('');
 
   const fetchAgents = useCallback(async () => {
     try {
@@ -46,6 +53,30 @@ export default function AgentManager() {
     } catch { setDetail(null); }
   };
 
+  const loadDeployments = useCallback(async () => {
+    try { const r = await deployApi.list(); setDeployments(r.data.deployments || []); } catch {}
+  }, []);
+
+  useEffect(() => { if (showDeploy) loadDeployments(); }, [showDeploy, loadDeployments]);
+
+  const startDeploy = async () => {
+    if (!deployForm.target_ip || !deployForm.username) return;
+    setDeploying(true);
+    try {
+      await deployApi.create(deployForm);
+      setDeployForm({ target_ip: '', target_os: 'linux', username: 'root', password: '' });
+      loadDeployments();
+      setTimeout(loadDeployments, 5000);
+      setTimeout(loadDeployments, 15000);
+      setTimeout(() => { loadDeployments(); fetchAgents(); }, 30000);
+    } catch (e) { console.error('Deploy failed:', e); }
+    finally { setDeploying(false); }
+  };
+
+  const loadScript = async (os) => {
+    try { const r = await deployApi.script(os); setInstallScript(typeof r.data === 'string' ? r.data : JSON.stringify(r.data)); } catch {}
+  };
+
   const deleteAgent = async (id) => {
     try {
       await agentsApi.remove(id);
@@ -65,14 +96,75 @@ export default function AgentManager() {
     <div style={{ display: 'flex', gap: 16, height: 'calc(100vh - 100px)' }}>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
         {/* Header */}
-        <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h2 style={{ color: '#fff', margin: 0, fontSize: 18 }}>
             Agent Management
             <span style={{ color: 'var(--text3)', fontSize: 12, fontWeight: 400, marginLeft: 8 }}>
               Endpoint Collectors
             </span>
           </h2>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowDeploy(s => !s)}>🚀 Deploy Agent</button>
         </div>
+
+        {showDeploy && (
+          <div style={{ background: 'var(--bg2)', borderRadius: 8, border: '1px solid var(--border)', padding: 16 }}>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              {[['ssh', '🔑 SSH Deploy'], ['script', '📋 Install Script']].map(([k, l]) => (
+                <button key={k} className={`btn btn-sm ${deployTab === k ? 'btn-primary' : 'btn-secondary'}`} onClick={() => { setDeployTab(k); if (k === 'script') loadScript('linux'); }}>{l}</button>
+              ))}
+            </div>
+
+            {deployTab === 'ssh' ? (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px 120px 1fr', gap: 8, marginBottom: 10 }}>
+                  <input placeholder="Target IP (e.g. 192.168.1.100)" value={deployForm.target_ip} onChange={e => setDeployForm(f => ({ ...f, target_ip: e.target.value }))} style={{ padding: '6px 10px', fontSize: 12 }} />
+                  <select value={deployForm.target_os} onChange={e => setDeployForm(f => ({ ...f, target_os: e.target.value }))} style={{ padding: '6px 8px', fontSize: 12 }}>
+                    <option value="linux">Linux</option>
+                    <option value="macos">macOS</option>
+                    <option value="windows">Windows</option>
+                  </select>
+                  <input placeholder="Username" value={deployForm.username} onChange={e => setDeployForm(f => ({ ...f, username: e.target.value }))} style={{ padding: '6px 10px', fontSize: 12 }} />
+                  <input type="password" placeholder="Password / SSH Key" value={deployForm.password} onChange={e => setDeployForm(f => ({ ...f, password: e.target.value }))} style={{ padding: '6px 10px', fontSize: 12 }} />
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn btn-primary btn-sm" onClick={startDeploy} disabled={deploying || !deployForm.target_ip}>{deploying ? '⏳ Deploying...' : '🚀 Deploy'}</button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => setShowDeploy(false)}>Cancel</button>
+                </div>
+              </>
+            ) : (
+              <div>
+                <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                  {['linux', 'macos', 'windows'].map(os => (
+                    <button key={os} className="btn btn-secondary btn-sm" onClick={() => loadScript(os)}>{os === 'linux' ? '🐧' : os === 'macos' ? '🍎' : '🪟'} {os}</button>
+                  ))}
+                </div>
+                <pre style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 6, padding: 12, fontSize: 11, color: '#68d391', maxHeight: 200, overflow: 'auto', whiteSpace: 'pre-wrap', cursor: 'pointer' }}
+                  onClick={() => { navigator.clipboard.writeText(installScript); }}
+                  title="Click to copy">
+                  {installScript || 'Select an OS to generate install script...'}
+                </pre>
+                <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 4 }}>Click script to copy to clipboard</div>
+              </div>
+            )}
+
+            {deployments.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', marginBottom: 6 }}>Deployment History</div>
+                <div style={{ maxHeight: 150, overflow: 'auto' }}>
+                  {deployments.slice(0, 10).map(dep => (
+                    <div key={dep.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', background: 'var(--bg3)', borderRadius: 4, marginBottom: 4, fontSize: 11 }}>
+                      <span style={{ color: DEP_STATUS_COLORS[dep.status] || '#94a3b8', fontWeight: 600, textTransform: 'uppercase', minWidth: 70 }}>{dep.status}</span>
+                      <span style={{ fontFamily: 'monospace', color: 'var(--text2)' }}>{dep.target_ip}</span>
+                      <span style={{ color: 'var(--text3)' }}>{dep.target_os}</span>
+                      <span style={{ color: 'var(--text3)', marginLeft: 'auto' }}>{dep.created_by}</span>
+                      <span style={{ color: 'var(--text3)' }}>{dep.created_at ? formatDistanceToNow(new Date(dep.created_at), { addSuffix: true }) : ''}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Stats */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10 }}>

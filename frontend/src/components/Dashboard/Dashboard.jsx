@@ -133,6 +133,49 @@ export default function Dashboard({ liveEvents, liveAlerts }) {
         </div>
       </div>
 
+      {/* Agent & Asset Status */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div className="card">
+          <div className="card-title">🖥️ Agent Status</div>
+          <div style={{ display: 'flex', gap: 16 }}>
+            {[
+              { label: 'Total', value: stats?.agentStats?.total ?? 0, color: 'var(--gold)' },
+              { label: 'Online', value: stats?.agentStats?.online ?? 0, color: '#68d391', dot: '#68d391' },
+              { label: 'Offline', value: stats?.agentStats?.offline ?? 0, color: '#fc8181', dot: '#fc8181' },
+            ].map(a => (
+              <div key={a.label} style={{ textAlign: 'center', flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                  {a.dot && <div style={{ width: 6, height: 6, borderRadius: '50%', background: a.dot }} />}
+                  <span style={{ fontSize: 22, fontWeight: 700, color: a.color }}>{a.value}</span>
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>{a.label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="card">
+          <div className="card-title">📦 Asset Overview</div>
+          <div style={{ display: 'flex', gap: 16 }}>
+            <div style={{ textAlign: 'center', flex: 1 }}>
+              <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--gold)' }}>{stats?.assetStats?.total ?? 0}</div>
+              <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>Total Assets</div>
+            </div>
+            <div style={{ textAlign: 'center', flex: 1 }}>
+              <div style={{ fontSize: 22, fontWeight: 700, color: stats?.assetStats?.compliancePercent >= 80 ? '#68d391' : '#fc8181' }}>{stats?.assetStats?.compliancePercent ?? 0}%</div>
+              <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>Compliant</div>
+            </div>
+            <div style={{ flex: 2 }}>
+              {(stats?.assetStats?.byOs || []).slice(0, 3).map((o, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, padding: '2px 0' }}>
+                  <span style={{ color: 'var(--text2)' }}>{o.os_name || 'Unknown'}</span>
+                  <span style={{ color: 'var(--gold)', fontWeight: 600 }}>{o.cnt}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* MITRE top tactics */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
         <div className="card">
@@ -158,7 +201,7 @@ export default function Dashboard({ liveEvents, liveAlerts }) {
         </div>
         <div className="card">
           <div className="card-title">🔢 Platform Stats</div>
-          {[['IOC Hits', stats?.iocHits ?? '—'], ['High-Risk Users', stats?.uebaHigh ?? '—'], ['Active Sources', '24'], ['Indexed Indices', '5']].map(([k, v]) => (
+          {[['IOC Hits', stats?.iocHits ?? '—'], ['High-Risk Users', stats?.uebaHigh ?? '—'], ['SOAR Runs', stats?.soarRuns ?? '—'], ['Events (24h)', stats?.eventCount ? (stats.eventCount > 999 ? (stats.eventCount / 1000).toFixed(1) + 'K' : stats.eventCount) : '—']].map(([k, v]) => (
             <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid rgba(30,58,110,.3)', fontSize: 12 }}>
               <span style={{ color: 'var(--text2)' }}>{k}</span>
               <span style={{ color: 'var(--gold)', fontWeight: 600 }}>{v}</span>
