@@ -129,7 +129,9 @@ function db() {
           }
         };
       },
-      close: async () => {},
+      close: async () => {
+        if (_sqliteRaw) { try { _sqliteRaw.close(); } catch {} _sqliteRaw = null; }
+      },
     };
   }
 
@@ -511,14 +513,59 @@ async function migrateLegacyColumns(d) {
   }
 }
 
+// Ordered, tracked migrations applied on every boot. Each runs at most once (recorded in
+// schema_migrations) — this is how schema changes ship after initial release, since
+// schemaSql() above only handles brand-new installs via CREATE TABLE IF NOT EXISTS.
+const MIGRATIONS = [
+  {
+    name: '0001_correlation_rule_conditions',
+    sql: () => `ALTER TABLE correlation_rules ADD COLUMN conditions TEXT`,
+  },
+  {
+    name: '0002_audit_log',
+    sql: (dialect) => dialect === 'postgres'
+      ? `CREATE TABLE IF NOT EXISTS audit_log (
+           id TEXT PRIMARY KEY, actor TEXT, action TEXT NOT NULL, entity_type TEXT, entity_id TEXT,
+           detail TEXT, ip_address TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
+         )`
+      : `CREATE TABLE IF NOT EXISTS audit_log (
+           id TEXT PRIMARY KEY, actor TEXT, action TEXT NOT NULL, entity_type TEXT, entity_id TEXT,
+           detail TEXT, ip_address TEXT, created_at TEXT DEFAULT (datetime('now'))
+         )`,
+  },
+  {
+    name: '0003_audit_log_index',
+    sql: () => `CREATE INDEX IF NOT EXISTS idx_audit_log_ts ON audit_log(created_at)`,
+  },
+];
+
+async function runMigrations(d) {
+  await d.exec(d.dialect === 'postgres'
+    ? `CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ DEFAULT NOW())`
+    : `CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, applied_at TEXT DEFAULT (datetime('now')))`
+  );
+  for (const m of MIGRATIONS) {
+    const applied = await d.prepare('SELECT name FROM schema_migrations WHERE name = ?').get(m.name);
+    if (applied) continue;
+    try {
+      await d.exec(m.sql(d.dialect));
+    } catch (e) {
+      if (!/duplicate column|already exists/i.test(e.message)) throw e;
+    }
+    await d.prepare('INSERT INTO schema_migrations(name) VALUES(?)').run(m.name);
+    console.log(`[Migrate] Applied ${m.name}`);
+  }
+}
+
 async function initDb() {
   const d = db();
   await d.exec(schemaSql());
   await migrateLegacyColumns(d);
   await d.exec('CREATE INDEX IF NOT EXISTS idx_events_ocsf_class ON events(ocsf_class_uid);');
+  await runMigrations(d);
   if (d.dialect === 'sqlite') console.log('[DB] Schema ready:', SQLITE_DB_PATH);
   else console.log('[DB] Schema ready:', 'postgres');
   return d;
 }
 
-module.exports = { db, initDb, getDialect, sqlNow, sqlNowMinus, sqlDate };
+module.exports = { db, initDb, getDialect, sqlNow, sqlNowMinus, sqlDate, runMigrations };
