@@ -3,6 +3,7 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { db, sqlNowMinus } = require('../models/db');
 const { authenticate } = require('../middleware/auth');
+const { parseToOCSF } = require('../services/ocsfParser');
 const router = express.Router();
 
 router.get('/', authenticate, async (req, res) => {
@@ -40,24 +41,32 @@ router.post('/ingest', async (req, res) => {
   const logs = Array.isArray(req.body) ? req.body : [req.body];
   const agentId = req.headers['x-agent-id'] || null;
   const d = db();
-  const ins = d.prepare(`INSERT INTO events(id,timestamp,source,event_id,computer,username,ip_address,action,severity,raw_log,index_name,agent_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`);
+  const ins = d.prepare(`INSERT INTO events(id,timestamp,source,event_id,computer,username,ip_address,action,severity,raw_log,index_name,agent_id,ocsf_log,ocsf_class_uid,ocsf_class_name,ocsf_category_name) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
   const insertAll = d.transaction(async (rows) => {
     for (const r of rows) await ins.run(...r);
   });
-  const rows = logs.map(l => [
-    uuidv4(),
-    l.timestamp || new Date().toISOString(),
-    l.source || 'Unknown',
-    l.event_id || null,
-    l.computer || null,
-    l.username || null,
-    l.ip_address || null,
-    l.action || null,
-    l.severity || 'Info',
-    typeof l.raw === 'string' ? l.raw : JSON.stringify(l),
-    l.index || 'default',
-    l.agent_id || agentId
-  ]);
+  const rows = logs.map(l => {
+    let ocsf = null;
+    try { ocsf = parseToOCSF(l); } catch { /* best-effort normalization */ }
+    return [
+      uuidv4(),
+      l.timestamp || new Date().toISOString(),
+      l.source || 'Unknown',
+      l.event_id || null,
+      l.computer || null,
+      l.username || null,
+      l.ip_address || null,
+      l.action || null,
+      l.severity || 'Info',
+      typeof l.raw === 'string' ? l.raw : JSON.stringify(l),
+      l.index || 'default',
+      l.agent_id || agentId,
+      ocsf ? JSON.stringify(ocsf) : null,
+      ocsf ? ocsf.class_uid : null,
+      ocsf ? ocsf.class_name : null,
+      ocsf ? ocsf.category_name : null,
+    ];
+  });
   await insertAll(rows);
 
   if (agentId) {

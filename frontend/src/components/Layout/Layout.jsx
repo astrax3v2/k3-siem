@@ -15,6 +15,7 @@ const NAV = [
   { path: '/agents', icon: '🖥️', label: 'Agents' },
   { path: '/inventory', icon: '📦', label: 'Inventory' },
   { path: '/vulnerabilities', icon: '🛡️', label: 'Vulnerabilities' },
+  { path: '/ocsf', icon: '🧬', label: 'OCSF Parser' },
 ];
 
 export default function Layout({ children, connected, liveAlertCount = 0 }) {
