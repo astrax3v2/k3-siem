@@ -2,8 +2,15 @@
 const path = require('path');
 const fs = require('fs');
 const { db } = require('../models/db');
+const { INGEST_API_KEY } = require('../config');
 
 const AGENT_DIR = path.resolve(__dirname, '../../../k3-agent');
+
+// Defense in depth: never persist a credential-shaped value into deployment logs, even if a
+// future change accidentally interpolates one (e.g. an error message echoing connection config).
+function redact(line) {
+  return String(line).replace(/(password["']?\s*[:=]\s*["']?)([^"'\s&]+)/gi, '$1[REDACTED]');
+}
 
 function getAgentFiles() {
   const files = {};
@@ -22,7 +29,7 @@ function appendLog(deployId, line) {
     const existing = row?.logs || '';
     const ts = new Date().toISOString().slice(11, 19);
     db().prepare('UPDATE deployments SET logs = ? WHERE id = ?')
-      .run(existing + `[${ts}] ${line}\n`, deployId);
+      .run(existing + `[${ts}] ${redact(line)}\n`, deployId);
   } catch {}
 }
 
@@ -50,8 +57,12 @@ async function deployViaSSH(deployId, config) {
     username,
     readyTimeout: 30000,
   };
-  if (ssh_key) sshConfig.privateKey = ssh_key;
-  else if (password) sshConfig.password = password;
+  if (ssh_key) {
+    sshConfig.privateKey = ssh_key;
+  } else if (password) {
+    sshConfig.password = password;
+    appendLog(deployId, 'WARNING: deploying with password auth. SSH key auth is strongly recommended for production targets.');
+  }
 
   const agentFiles = getAgentFiles();
   if (!agentFiles['agent.py']) {
@@ -62,7 +73,7 @@ async function deployViaSSH(deployId, config) {
   }
 
   const siemUrl = process.env.SIEM_PUBLIC_URL || `http://${target_ip === '127.0.0.1' ? 'localhost' : require('os').hostname()}:${process.env.PORT || 3001}`;
-  const apiKey = process.env.INGEST_API_KEY || 'k3-ingest-key';
+  const apiKey = INGEST_API_KEY;
 
   return new Promise((resolve) => {
     conn.on('ready', () => {
@@ -144,7 +155,7 @@ async function deployViaSSH(deployId, config) {
 
 function generateInstallScript(os, siemUrl, apiKey) {
   const url = siemUrl || `http://localhost:${process.env.PORT || 3001}`;
-  const key = apiKey || process.env.INGEST_API_KEY || 'k3-ingest-key';
+  const key = apiKey || INGEST_API_KEY;
 
   if (os === 'linux' || os === 'macos') {
     return `#!/bin/bash

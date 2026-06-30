@@ -559,7 +559,11 @@ simulate: false
 
 ---
 
-## 🔑 Login Credentials
+## 🔑 Login Credentials (local dev / `npm run seed` only)
+
+These accounts are created by `backend/src/utils/seed.js` for local development and demos
+only. **Never run the seeder against a production database, and rotate/remove these
+accounts (or their passwords) before exposing a deployment publicly.**
 
 | Username | Password | Role | Full Name | Permissions |
 |----------|----------|------|-----------|-------------|
@@ -567,6 +571,49 @@ simulate: false
 | `jmaharjan` | `K3@2026` | 🟠 T2 Analyst | Jenan Maharjan | Create rules, IOCs, execute playbooks |
 | `bpaudel` | `K3@2026` | 🟠 T2 Analyst | Bamdev Paudel | Create rules, IOCs, execute playbooks |
 | `analyst1` | `K3@2026` | 🟢 T1 Analyst | SOC Analyst | View-only, query, create incidents |
+
+---
+
+## 🚢 Production Deployment
+
+K3 SIEM ships with real detection logic and connector integrations, gated behind
+configuration so a deployment without external credentials still runs safely with no
+fake/simulated behavior pretending to be real.
+
+### Required before going live
+- Set real, unique values for `JWT_SECRET` and `INGEST_API_KEY` (the app refuses to start
+  without them — see `backend/.env.example` / root `.env.example`). Generate with
+  `openssl rand -base64 48` and `openssl rand -hex 32` respectively.
+- Set `CORS_ORIGIN` to your real frontend origin(s) — a wildcard is rejected when
+  `NODE_ENV=production`.
+- Put a TLS-terminating reverse proxy (nginx, Caddy, an ALB, etc.) in front of the app;
+  the Node process itself serves plain HTTP.
+- Do **not** run `npm run seed` against your production database — it deletes and
+  reseeds all tables. Create real user accounts directly instead.
+
+### What's real vs. what needs your credentials
+| Capability | Status |
+|---|---|
+| Correlation rule engine, IOC matching, UEBA risk scoring | Real — runs on ingested event history, no external service required |
+| Slack / Teams notifications | Real once `SLACK_WEBHOOK_URL` / `TEAMS_WEBHOOK_URL` is set |
+| Jira / ServiceNow ticketing | Real once `JIRA_*` / `SERVICENOW_*` env vars are set |
+| Email alerts | Real once `SMTP_*` / `ALERT_EMAIL_*` env vars are set |
+| CrowdStrike host isolation, Palo Alto IP blocking, MISP IOC submission | Real once their respective env vars are set (see `.env.example`) — these call your actual tenant, so test in a non-prod environment first |
+| VirusTotal / AbuseIPDB / OTX threat-intel feed sync | Real once their API keys are set — runs every 30 minutes |
+| Geo-velocity (UEBA) | Uses the free `ip-api.com` lookup by default; set `GEOIP_DISABLED=true` for air-gapped deployments |
+
+Any step/connector without its env vars configured reports "not configured" honestly in
+the SOAR execution result rather than silently pretending to succeed.
+
+### Operational
+- **Backups**: `scripts/backup.sh` / `scripts/restore.sh` wrap `pg_dump`/`psql` against the
+  `db` container — wire `backup.sh` into a host cron job.
+- **Retention**: events older than `EVENTS_RETENTION_DAYS` (default 90) and closed alerts
+  older than `CLOSED_ALERTS_RETENTION_DAYS` (default 180) are purged nightly.
+- **Health checks**: `GET /health` (liveness) and `GET /ready` (DB connectivity) for your
+  orchestrator's probes.
+- **Audit log**: admin-only `GET /api/audit` records logins, rule/agent/incident/alert
+  changes.
 
 ---
 

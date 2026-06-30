@@ -4,9 +4,10 @@ services:
     environment:
       POSTGRES_DB: k3_siem
       POSTGRES_USER: k3
-      POSTGRES_PASSWORD: k3_password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (see .env.example)}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./backups:/backups
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U k3 -d k3_siem"]
       interval: 5s
@@ -24,11 +25,27 @@ services:
     environment:
       NODE_ENV: production
       DB_CLIENT: postgres
-      DATABASE_URL: postgresql://k3:k3_password@db:5432/k3_siem
-      JWT_SECRET: k3-siem-production-secret-change-me
-      CORS_ORIGIN: "*"
+      DATABASE_URL: postgresql://k3:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/k3_siem
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env (see .env.example) — generate with: openssl rand -base64 48}
+      INGEST_API_KEY: ${INGEST_API_KEY:?Set INGEST_API_KEY in .env (see .env.example) — generate with: openssl rand -hex 32}
+      CORS_ORIGIN: ${CORS_ORIGIN:?Set CORS_ORIGIN in .env to your real frontend origin, e.g. https://siem.example.com}
       LOG_INGEST_INTERVAL: "5000"
-      INGEST_API_KEY: k3-ingest-key
+      SIEM_PUBLIC_URL: ${SIEM_PUBLIC_URL:-}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      JIRA_BASE_URL: ${JIRA_BASE_URL:-}
+      JIRA_EMAIL: ${JIRA_EMAIL:-}
+      JIRA_API_TOKEN: ${JIRA_API_TOKEN:-}
+      JIRA_PROJECT_KEY: ${JIRA_PROJECT_KEY:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      ALERT_EMAIL_FROM: ${ALERT_EMAIL_FROM:-}
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
+      VIRUSTOTAL_API_KEY: ${VIRUSTOTAL_API_KEY:-}
+      ABUSEIPDB_API_KEY: ${ABUSEIPDB_API_KEY:-}
+      OTX_API_KEY: ${OTX_API_KEY:-}
+      NVD_API_KEY: ${NVD_API_KEY:-}
     restart: unless-stopped
 
   agent-windows:
@@ -37,7 +54,7 @@ services:
       - app
     environment:
       K3_SIEM_URL: http://app:3001
-      K3_API_KEY: k3-ingest-key
+      K3_API_KEY: ${INGEST_API_KEY:?Set INGEST_API_KEY in .env}
       K3_SIMULATE: "true"
       K3_SIMULATE_OS: windows
       K3_HOSTNAME: WS-PC-001
@@ -51,7 +68,7 @@ services:
       - app
     environment:
       K3_SIEM_URL: http://app:3001
-      K3_API_KEY: k3-ingest-key
+      K3_API_KEY: ${INGEST_API_KEY:?Set INGEST_API_KEY in .env}
       K3_SIMULATE: "true"
       K3_SIMULATE_OS: linux
       K3_HOSTNAME: SRV-UBUNTU-01
@@ -65,7 +82,7 @@ services:
       - app
     environment:
       K3_SIEM_URL: http://app:3001
-      K3_API_KEY: k3-ingest-key
+      K3_API_KEY: ${INGEST_API_KEY:?Set INGEST_API_KEY in .env}
       K3_SIMULATE: "true"
       K3_SIMULATE_OS: network
       K3_HOSTNAME: FW-PALOALTO-01

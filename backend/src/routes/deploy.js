@@ -6,6 +6,8 @@ const { v4: uuidv4 } = require('uuid');
 const { db } = require('../models/db');
 const { authenticate, authorize } = require('../middleware/auth');
 const { deployViaSSH, generateInstallScript, getAgentFiles } = require('../services/deployer');
+const { INGEST_API_KEY } = require('../config');
+const { logAction } = require('../services/audit');
 const router = express.Router();
 
 router.post('/', authenticate, authorize('admin', 't2_analyst'), async (req, res) => {
@@ -17,6 +19,7 @@ router.post('/', authenticate, authorize('admin', 't2_analyst'), async (req, res
   const d = db();
   await d.prepare('INSERT INTO deployments(id, target_ip, target_os, target_user, status, logs, created_by) VALUES(?,?,?,?,?,?,?)')
     .run(id, target_ip, target_os, username, 'pending', '', req.user.username);
+  await logAction(req.user.username, 'agent_deploy_started', 'deployment', id, `${target_os} → ${target_ip}`, req.ip);
 
   deployViaSSH(id, { target_ip, target_os, username, password, ssh_key }).catch((err) => {
     console.error('[Deploy] Error:', err.message);
@@ -34,12 +37,13 @@ router.get('/', authenticate, async (req, res) => {
 router.get('/script/:os', authenticate, async (req, res) => {
   const { os } = req.params;
   const siemUrl = req.query.siem_url || process.env.SIEM_PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
-  const apiKey = process.env.INGEST_API_KEY || 'k3-ingest-key';
-  const script = generateInstallScript(os, siemUrl, apiKey);
+  const script = generateInstallScript(os, siemUrl, INGEST_API_KEY);
   res.type('text/plain').send(script);
 });
 
-router.get('/download/:filename', (req, res) => {
+// Authenticated: agent.py/config.yaml templates are plain (no embedded secrets), but the
+// install script above does embed the real ingest key, so keep this whole namespace gated.
+router.get('/download/:filename', authenticate, (req, res) => {
   const { filename } = req.params;
   const allowed = ['agent.py', 'requirements.txt', 'config.yaml'];
   if (!allowed.includes(filename)) return res.status(404).json({ error: 'File not found' });

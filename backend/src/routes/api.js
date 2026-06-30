@@ -3,6 +3,8 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { db, getDialect, sqlNow, sqlNowMinus, sqlDate } = require('../models/db');
 const { authenticate, authorize, ROLE_ADMIN, ROLE_T1, ROLE_T2 } = require('../middleware/auth');
+const { runStep } = require('../services/connectors');
+const { logAction } = require('../services/audit');
 const router = express.Router();
 
 // ── DASHBOARD ──────────────────────────────────────────────────────────────
@@ -80,6 +82,7 @@ router.patch('/alerts/:id', authenticate, authorize(ROLE_T1, ROLE_T2, ROLE_ADMIN
   if (status === 'Closed') fields.push(`closed_at = ${sqlNow()}`);
   params.push(req.params.id);
   await d.prepare(`UPDATE alerts SET ${fields.join(', ')} WHERE id = ?`).run(...params);
+  if (status) await logAction(req.user.username, 'alert_status_changed', 'alert', req.params.id, status, req.ip);
   res.json(await d.prepare('SELECT * FROM alerts WHERE id = ?').get(req.params.id));
 });
 
@@ -117,14 +120,16 @@ router.get('/correlation/rules', authenticate, async (req, res) => {
 router.patch('/correlation/rules/:id', authenticate, authorize(ROLE_T2, ROLE_ADMIN), async (req, res) => {
   const { enabled } = req.body;
   await db().prepare('UPDATE correlation_rules SET enabled = ? WHERE id = ?').run(enabled?1:0, req.params.id);
+  await logAction(req.user.username, enabled ? 'rule_enabled' : 'rule_disabled', 'correlation_rule', req.params.id, null, req.ip);
   res.json(await db().prepare('SELECT * FROM correlation_rules WHERE id = ?').get(req.params.id));
 });
 
 router.post('/correlation/rules', authenticate, authorize(ROLE_T2, ROLE_ADMIN), async (req, res) => {
-  const { name, description, logic, severity='High', risk_score=80, window_minutes=5, indices, threshold=1 } = req.body;
+  const { name, description, logic, severity='High', risk_score=80, window_minutes=5, indices, threshold=1, conditions } = req.body;
   if (!name || !logic) return res.status(400).json({ error: 'name and logic required' });
   const id = uuidv4();
-  await db().prepare('INSERT INTO correlation_rules(id,name,description,logic,severity,risk_score,window_minutes,indices,threshold) VALUES(?,?,?,?,?,?,?,?,?)').run(id,name,description,logic,severity,risk_score,window_minutes,JSON.stringify(indices||[]),threshold);
+  await db().prepare('INSERT INTO correlation_rules(id,name,description,logic,severity,risk_score,window_minutes,indices,threshold,conditions) VALUES(?,?,?,?,?,?,?,?,?,?)').run(id,name,description,logic,severity,risk_score,window_minutes,JSON.stringify(indices||[]),threshold,conditions?JSON.stringify(conditions):null);
+  await logAction(req.user.username, 'rule_created', 'correlation_rule', id, name, req.ip);
   res.status(201).json(await db().prepare('SELECT * FROM correlation_rules WHERE id = ?').get(id));
 });
 
@@ -145,19 +150,31 @@ router.post('/soar/playbooks/:id/execute', authenticate, authorize(ROLE_T2, ROLE
   await d.prepare('INSERT INTO playbook_executions(id,playbook_id,alert_id,triggered_by,status,steps_completed) VALUES(?,?,?,?,?,?)').run(execId,pb.id,alert_id||null,req.user.username,'running',0);
   await d.prepare(`UPDATE playbooks SET execution_count=execution_count+1, last_executed=${sqlNow()} WHERE id=?`).run(pb.id);
 
-  let step = 0;
-  const tick = setInterval(() => {
-    step++;
-    (async () => {
-      const d2 = db();
-      if (step >= steps.length) {
-        clearInterval(tick);
-        await d2.prepare(`UPDATE playbook_executions SET status='completed',steps_completed=?,completed_at=${sqlNow()},result=? WHERE id=?`).run(steps.length,'All steps completed successfully',execId);
-      } else {
-        await d2.prepare('UPDATE playbook_executions SET steps_completed=? WHERE id=?').run(step,execId);
-      }
-    })().catch(() => {});
-  }, 900);
+  const alert = alert_id ? await d.prepare('SELECT * FROM alerts WHERE id = ?').get(alert_id) : null;
+  const context = alert ? {
+    summary: alert.title, ip: alert.ip_address, asset: alert.asset,
+    hash: (alert.raw_evidence || '').match(/\b[a-fA-F0-9]{32,64}\b/)?.[0] || null,
+  } : { summary: pb.name };
+
+  (async () => {
+    const d2 = db();
+    const results = [];
+    for (let i = 0; i < steps.length; i++) {
+      let r;
+      try { r = await runStep(steps[i], context); }
+      catch (e) { r = { ok: false, detail: `Step failed: ${e.message}`, connector: 'unknown' }; }
+      results.push({ step: steps[i], ...r });
+      await d2.prepare('UPDATE playbook_executions SET steps_completed = ? WHERE id = ?').run(i + 1, execId);
+    }
+    const okCount = results.filter((r) => r.ok).length;
+    const notConfigured = results.filter((r) => !r.ok && /not configured/i.test(r.detail || ''));
+    const uniqueConnectors = [...new Set(notConfigured.map((r) => r.connector))];
+    const summary = notConfigured.length
+      ? `${okCount}/${results.length} steps completed — ${notConfigured.length} skipped (connector not configured: ${uniqueConnectors.join(', ')})`
+      : `${okCount}/${results.length} steps completed successfully`;
+    await d2.prepare(`UPDATE playbook_executions SET status='completed', completed_at=${sqlNow()}, result=? WHERE id=?`)
+      .run(summary, execId);
+  })().catch((e) => console.error('[SOAR] Execution failed:', e.message));
 
   res.json({ execution_id: execId, playbook: pb.name, steps_total: steps.length, status: 'running' });
 });
@@ -279,6 +296,7 @@ router.patch('/incidents/:id', authenticate, authorize(ROLE_T1, ROLE_T2, ROLE_AD
   if (status && status !== 'Closed') fields.push('closed_at = NULL');
   params.push(req.params.id);
   await d.prepare(`UPDATE incidents SET ${fields.join(', ')} WHERE id = ?`).run(...params);
+  if (status) await logAction(req.user.username, 'incident_status_changed', 'incident', req.params.id, status, req.ip);
   res.json(await d.prepare('SELECT * FROM incidents WHERE id = ?').get(req.params.id));
 });
 
@@ -308,6 +326,16 @@ router.post('/incidents/:id/alerts', authenticate, authorize(ROLE_T1, ROLE_T2, R
   await d.prepare(linkSql).run(req.params.id, alert_id);
   await d.prepare(`UPDATE incidents SET updated_at=${sqlNow()} WHERE id=?`).run(req.params.id);
   res.json({ ok: true });
+});
+
+// ── AUDIT LOG ──────────────────────────────────────────────────────────────
+router.get('/audit', authenticate, authorize(ROLE_ADMIN), async (req, res) => {
+  const { page = 1, limit = 50 } = req.query;
+  const offset = (parseInt(page) - 1) * parseInt(limit);
+  const d = db();
+  const total = (await d.prepare('SELECT COUNT(*) as cnt FROM audit_log').get())?.cnt || 0;
+  const entries = await d.prepare('SELECT * FROM audit_log ORDER BY created_at DESC LIMIT ? OFFSET ?').all(parseInt(limit), offset);
+  res.json({ entries, total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) });
 });
 
 // ── HEALTH ─────────────────────────────────────────────────────────────────

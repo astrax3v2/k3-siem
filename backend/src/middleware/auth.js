@@ -1,6 +1,6 @@
 'use strict';
 const jwt = require('jsonwebtoken');
-const SECRET = process.env.JWT_SECRET || 'k3-siem-secret';
+const { JWT_SECRET: SECRET } = require('../config');
 
 const ROLE_ADMIN = 'admin';
 const ROLE_T1 = 't1_analyst';

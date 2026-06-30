@@ -4,6 +4,8 @@ const { v4: uuidv4 } = require('uuid');
 const { db, sqlNowMinus } = require('../models/db');
 const { authenticate } = require('../middleware/auth');
 const { parseToOCSF } = require('../services/ocsfParser');
+const { matchIOCs } = require('../services/iocMatcher');
+const { INGEST_API_KEY } = require('../config');
 const router = express.Router();
 
 router.get('/', authenticate, async (req, res) => {
@@ -36,7 +38,7 @@ router.get('/stats', authenticate, async (req, res) => {
 
 router.post('/ingest', async (req, res) => {
   const key = req.headers['x-api-key'];
-  if (key !== (process.env.INGEST_API_KEY || 'k3-ingest-key'))
+  if (key !== INGEST_API_KEY)
     return res.status(401).json({ error: 'Invalid API key' });
   const logs = Array.isArray(req.body) ? req.body : [req.body];
   const agentId = req.headers['x-agent-id'] || null;
@@ -75,6 +77,12 @@ router.post('/ingest', async (req, res) => {
         .run(rows.length, new Date().toISOString(), agentId);
     } catch {}
   }
+
+  // IOC matching runs after the response is queued so ingestion latency isn't gated on it.
+  Promise.all(logs.map((l) => matchIOCs({
+    source: l.source, computer: l.computer, username: l.username,
+    ip_address: l.ip_address, raw_log: typeof l.raw === 'string' ? l.raw : JSON.stringify(l),
+  }).catch(() => []))).catch(() => {});
 
   res.json({ ingested: rows.length, status: 'ok' });
 });

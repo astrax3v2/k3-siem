@@ -1,6 +1,7 @@
 'use strict';
 const { v4: uuidv4 } = require('uuid');
 const { db, sqlNowMinus } = require('../models/db');
+const { matchIOCs } = require('./iocMatcher');
 
 const rand=(a,b)=>Math.floor(Math.random()*(b-a+1))+a;
 const pick=arr=>arr[Math.floor(Math.random()*arr.length)];
@@ -73,6 +74,8 @@ function startIngestion(ms=3000) {
       }
       broadcast('events', batch);
       if (newAlerts.length) broadcast('alerts', newAlerts);
+
+      Promise.all(batch.map((e) => matchIOCs(e).catch(() => []))).catch(() => {});
     })().catch(() => {});
   }, ms);
 }

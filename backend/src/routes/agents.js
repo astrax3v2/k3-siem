@@ -3,11 +3,13 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { db, sqlNowMinus } = require('../models/db');
 const { authenticate, authorize } = require('../middleware/auth');
+const { INGEST_API_KEY } = require('../config');
+const { logAction } = require('../services/audit');
 const router = express.Router();
 
 function apiKeyAuth(req, res, next) {
   const key = req.headers['x-api-key'];
-  if (key !== (process.env.INGEST_API_KEY || 'k3-ingest-key'))
+  if (key !== INGEST_API_KEY)
     return res.status(401).json({ error: 'Invalid API key' });
   next();
 }
@@ -125,6 +127,7 @@ router.patch('/:id', authenticate, authorize('admin', 't2_analyst'), async (req,
 router.delete('/:id', authenticate, authorize('admin'), async (req, res) => {
   const d = db();
   await d.prepare('DELETE FROM agents WHERE id = ?').run(req.params.id);
+  await logAction(req.user.username, 'agent_deleted', 'agent', req.params.id, null, req.ip);
   res.json({ status: 'deleted' });
 });
 
