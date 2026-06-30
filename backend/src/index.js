@@ -16,6 +16,7 @@ const { startAgentMonitor } = require('./services/agentMonitor');
 const authRouter   = require('./routes/auth');
 const eventsRouter = require('./routes/events');
 const agentsRouter = require('./routes/agents');
+const deployRouter = require('./routes/deploy');
 const apiRouter    = require('./routes/api');
 
 const app  = express();
@@ -32,6 +33,7 @@ app.use(rateLimit({ windowMs: 15*60*1000, max: 1000 }));
 app.use('/api/auth',   authRouter);
 app.use('/api/events', eventsRouter);
 app.use('/api/agents', agentsRouter);
+app.use('/api/deploy', deployRouter);
 app.use('/api',        apiRouter);
 
 if (process.env.NODE_ENV === 'production') {

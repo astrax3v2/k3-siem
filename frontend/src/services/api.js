@@ -77,6 +77,25 @@ export const agentsApi = {
   remove: (id) => api.delete(`/agents/${id}`),
 };
 
+export const deployApi = {
+  create: (data) => api.post('/deploy', data),
+  list: () => api.get('/deploy'),
+  get: (id) => api.get(`/deploy/${id}`),
+  script: (os) => api.get(`/deploy/script/${os}`, { responseType: 'text' }),
+};
+
+export const assetsApi = {
+  list: (params) => api.get('/agents/assets/list', { params }),
+  stats: () => api.get('/agents/assets/stats'),
+  get: (agentId) => api.get(`/agents/assets/${agentId}`),
+};
+
+export const vulnApi = {
+  list: (params) => api.get('/agents/assets/vulnerabilities', { params }),
+  stats: () => api.get('/agents/assets/vulnerabilities/stats'),
+  forAsset: (agentId) => api.get(`/agents/assets/${agentId}/vulnerabilities`),
+};
+
 export const incidentsApi = {
   list: (params) => api.get('/incidents', { params }),
   create: (data) => api.post('/incidents', data),
