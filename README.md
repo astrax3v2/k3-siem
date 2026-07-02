@@ -25,6 +25,7 @@
 ## 📋 Table of Contents
 
 - [Overview](#-overview)
+- [Screenshots](#-screenshots)
 - [Features](#-features)
 - [Architecture](#-architecture)
 - [Quick Start](#-quick-start)
@@ -51,6 +52,33 @@ K3 SIEM is a full-stack **Security Information and Event Management** platform i
 | 🤖 **SOAR Automation** | Execute playbooks with step-by-step progress tracking |
 | 🧠 **UEBA Analytics** | ML-inspired user behavior analytics with anomaly scoring |
 | 🎯 **MITRE ATT&CK Mapping** | Every alert mapped to MITRE tactics and techniques |
+
+---
+
+## 📸 Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><strong>Security Operations Dashboard</strong><br/><img src="docs/screenshots/dashboard.png" alt="Dashboard" /></td>
+    <td width="50%"><strong>Alert Manager</strong><br/><img src="docs/screenshots/alert-manager.png" alt="Alert Manager" /></td>
+  </tr>
+  <tr>
+    <td width="50%"><strong>Incident Response</strong><br/><img src="docs/screenshots/incident-detail.png" alt="Incident Response detail panel" /></td>
+    <td width="50%"><strong>🌳 Process Tree — Attack Chain Investigation</strong><br/><img src="docs/screenshots/process-tree.png" alt="Process tree attack chain" /></td>
+  </tr>
+  <tr>
+    <td width="50%"><strong>Process Tree — Stage Detail Panel</strong><br/><img src="docs/screenshots/process-tree-detail.png" alt="Process tree node detail" /></td>
+    <td width="50%"><strong>Threat Intelligence</strong><br/><img src="docs/screenshots/threat-intel.png" alt="Threat Intelligence" /></td>
+  </tr>
+  <tr>
+    <td width="50%"><strong>Correlation Engine</strong><br/><img src="docs/screenshots/correlation.png" alt="Correlation Engine" /></td>
+    <td width="50%"><strong>SOAR Playbooks</strong><br/><img src="docs/screenshots/soar.png" alt="SOAR" /></td>
+  </tr>
+  <tr>
+    <td width="50%"><strong>Agent Management</strong><br/><img src="docs/screenshots/agents.png" alt="Agent Management" /></td>
+    <td width="50%"><strong>KQL Query Engine</strong><br/><img src="docs/screenshots/kql-engine.png" alt="KQL Engine" /></td>
+  </tr>
+</table>
 
 ---
 
@@ -89,6 +117,22 @@ K3 SIEM is a full-stack **Security Information and Event Management** platform i
   - Status progression buttons
   - **Linked Alerts Table** — All associated security alerts
   - **Notes Section** — Add timestamped investigation notes with author tracking
+- **🌳 Process Tree Link** — Incidents with a reconstructed attack chain show a "View Process
+  Tree" button opening the full investigation view (see below)
+
+### 🌳 Process Tree / Attack Chain Investigation
+A CrowdStrike Falcon-style process execution tree for tracing a compromise from initial entry
+to full compromise, reachable from any incident with a reconstructed attack chain.
+- **Incident Overview** — title, description, severity/status, host/user, plus rollup **Impact**,
+  **Remediation**, and **Lessons Learned** cards
+- **Process Execution Chain** — an indented parent→child tree of every process the attacker
+  spawned, color-coded by severity, malicious stages flagged, root labeled "🎯 Initial Entry
+  Vector" and the terminal stage labeled "💀 Full Compromise"
+- **Per-Stage Detail Panel** — click any process to see PID/PPID, image path, command line,
+  host/user, SHA256, MITRE tactic/technique, timestamp, and:
+  - **🔍 First Detected By** — the detection engine/rule/analyst that caught this stage
+  - **🤖 Auto-Analysis** — a plain-language explanation of why the stage is suspicious
+  - **💥 Impact**, **🛠️ Remediation**, and **📘 Lessons Learned** for that specific stage
 
 ### 📋 Event Explorer
 - **50 events per page** with pagination
@@ -207,6 +251,7 @@ k3-siem/
 │       │   ├── Dashboard/Dashboard.jsx  # 📊 KPI tiles, charts, live feeds
 │       │   ├── Alerts/AlertManager.jsx  # 🚨 Alert table + detail panel
 │       │   ├── Agents/AgentManager.jsx  # 🖥️ Agent management UI
+│       │   ├── Investigation/ProcessTree.jsx # 🌳 Attack chain process tree
 │       │   ├── KQL/KQLEngine.jsx        # 🔍 Query editor + results
 │       │   ├── Layout/Layout.jsx        # 📐 Topbar + sidebar navigation
 │       │   ├── Layout/Auth.jsx          # 🔐 Login + auth context
@@ -351,6 +396,14 @@ python agent.py --simulate --simulate-os network
 | **Table Columns** | Severity badge · Title · Asset · MITRE Tactic · Risk Score bar · Status · Time |
 | **Detail Panel** | Full metadata · Status update buttons · Create Incident · Risk visualization |
 | **Live Updates** | New alerts prepended via WebSocket with deduplication |
+
+### 🌳 Process Tree
+| Feature | Details |
+|---------|---------|
+| **Overview** | Incident title/description/severity/status + Impact · Remediation · Lessons Learned cards |
+| **Attack Chain Tree** | Indented parent→child process tree, severity-colored, malicious stages flagged |
+| **Markers** | Root = "🎯 Initial Entry Vector" · terminal malicious stage = "💀 Full Compromise" |
+| **Stage Detail Panel** | PID/PPID · image · command line · SHA256 · MITRE mapping · first detected by · auto-analysis |
 
 ### 🖥️ Agent Manager
 | Feature | Details |
@@ -499,7 +552,7 @@ simulate: false
 | `GET` | `/api/incidents` | JWT | Paginated with filters |
 | `POST` | `/api/incidents` | JWT | Create new incident |
 | `POST` | `/api/incidents/from-alert/:id` | JWT | Create incident from alert |
-| `GET` | `/api/incidents/:id` | JWT | Detail + alerts + notes |
+| `GET` | `/api/incidents/:id` | JWT | Detail + alerts + notes + linked `process_tree` (attack chain) |
 | `PATCH` | `/api/incidents/:id` | JWT | Update status/severity/priority |
 | `POST` | `/api/incidents/:id/notes` | JWT | Add investigation note |
 | `POST` | `/api/incidents/:id/alerts` | JWT | Link alert to incident |
@@ -546,9 +599,10 @@ simulate: false
 | `events` | Raw log storage | timestamp, source, event_id, severity, agent_id |
 | `alerts` | Security alerts | title, severity, mitre_tactic, risk_score, status |
 | `agents` | Registered agents | hostname, os, ip, status, last_heartbeat |
-| `incidents` | Incident cases | title, severity, status (6-stage), priority |
+| `incidents` | Incident cases | title, severity, status (6-stage), priority, impact, remediation, lessons_learned |
 | `incident_alerts` | Alert↔Incident links | incident_id, alert_id |
 | `incident_notes` | Investigation notes | author, note, timestamp |
+| `process_nodes` | Process tree / attack chain stages | incident_id, parent_id, pid, ppid, mitre_tactic, first_detected_by, auto_analysis |
 | `correlation_rules` | Detection rules | logic, severity, risk_score, window_minutes |
 | `playbooks` | SOAR automation | steps (JSON), trigger_condition, status |
 | `playbook_executions` | Execution tracking | status, steps_completed, result |
