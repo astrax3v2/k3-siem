@@ -85,33 +85,33 @@ K3 SIEM is a full-stack **Security Information and Event Management** platform i
 ## ✨ Features
 
 ### 📊 Security Operations Dashboard
-- **4 KPI Tiles** — Alerts (24h) with critical count, Open Incidents, Events Indexed (24h), SOAR Executions
-- **14-Day Alert Trend** — Area chart showing alert volume over time
-- **Severity Distribution** — Bar chart breakdown (Critical / High / Medium / Low / Info)
-- **⚡ Live Alert Feed** — Real-time WebSocket stream of the latest 5 security alerts with MITRE technique tags
-- **📡 Live Event Stream** — Top 10 raw events streaming live with green pulse indicator
-- **🎯 Top MITRE Tactics** — Ranked breakdown of MITRE ATT&CK tactics across all alerts
-- **📊 Alert Status Summary** — New / Assigned / In Progress / Closed counts
-- **🔢 Platform Stats** — IOC Hits, High-Risk Users, Active Sources, Indexed Indices
+- **4 KPI Tiles**  Alerts (24h) with critical count, Open Incidents, Events Indexed (24h), SOAR Executions
+- **14-Day Alert Trend** Area chart showing alert volume over time
+- **Severity Distribution** Bar chart breakdown (Critical / High / Medium / Low / Info)
+- **⚡ Live Alert Feed** Real-time WebSocket stream of the latest 5 security alerts with MITRE technique tags
+- **📡 Live Event Stream** Top 10 raw events streaming live with green pulse indicator
+- **🎯 Top MITRE Tactics** Ranked breakdown of MITRE ATT&CK tactics across all alerts
+- **📊 Alert Status Summary** New / Assigned / In Progress / Closed counts
+- **🔢 Platform Stats** IOC Hits, High-Risk Users, Active Sources, Indexed Indices
 
 ### 🚨 Alert Manager
-- **Severity Filters** — Quick filter buttons: All, Critical, High, Medium, Low
-- **Status Dropdown** — Filter by New, Assigned, In Progress, Closed
-- **Free-Text Search** — Search across alert title, asset, username, IP
-- **Alert Table** — ID, Severity badge, Title, Asset, MITRE Tactic, Risk Score (progress bar), Status, Timestamp
-- **Pagination** — 25 alerts per page with prev/next navigation
-- **Live Alert Integration** — New alerts from WebSocket prepended with deduplication
-- **Detail Panel** — Click any row to open side panel with:
+- **Severity Filters** Quick filter buttons: All, Critical, High, Medium, Low
+- **Status Dropdown**  Filter by New, Assigned, In Progress, Closed
+- **Free-Text Search** Search across alert title, asset, username, IP
+- **Alert Table** ID, Severity badge, Title, Asset, MITRE Tactic, Risk Score (progress bar), Status, Timestamp
+- **Pagination** 25 alerts per page with prev/next navigation
+- **Live Alert Integration** New alerts from WebSocket prepended with deduplication
+- **Detail Panel** Click any row to open side panel with:
   - Full alert metadata display
   - Status update buttons (New → Assigned → In Progress → Closed)
   - "Create Incident" button to escalate
   - Risk score visualization bar
 
 ### 🧯 Incident Response
-- **Create Incidents** — Form with title, description, severity (Critical/High/Medium/Low), priority (P1-P4)
-- **Create from Alert** — One-click incident creation from any alert
-- **Incident List** — Filterable by status, severity, search with alert/note counts
-- **6-Stage Status Workflow** — Open → In Progress → Contained → Eradicated → Recovered → Closed
+- **Create Incidents** Form with title, description, severity (Critical/High/Medium/Low), priority (P1-P4)
+- **Create from Alert** One-click incident creation from any alert
+- **Incident List** Filterable by status, severity, search with alert/note counts
+- **6-Stage Status Workflow** Open → In Progress → Contained → Eradicated → Recovered → Closed
 - **Detail Panel** includes:
   - Incident metadata (severity, priority, status, owner)
   - Status progression buttons
@@ -138,14 +138,14 @@ to full compromise, reachable from any incident with a reconstructed attack chai
 - **50 events per page** with pagination
 - **Filters**: Free-text search (user/computer/IP/action), severity dropdown, index selector
 - **5 Log Indices**: `windows-security`, `linux-syslog`, `network-flow`, `endpoint-edr`, `cloud-identity`
-- **Live Event Overlay** — Top 10 new events highlighted in green with streaming indicator
+- **Live Event Overlay** Top 10 new events highlighted in green with streaming indicator
 - **Columns**: Timestamp, Index badge, Source, Event ID (gold monospace), Computer, User, Action, IP, Severity badge
 - **Total Count** display with refresh button
 
 ### 🔍 KQL Query Engine
 - **Three Tabs**: Editor, Results, Saved Queries
-- **Query Editor** — Monospace text area with dark theme
-- **Sample Queries** — Quick-load buttons for common threat hunting queries
+- **Query Editor** Monospace text area with dark theme
+- **Sample Queries** Quick-load buttons for common threat hunting queries
 - **Supported KQL Operators**:
   - `| where event_id == "4625"` — Exact match
   - `| where severity == "Critical"` — Severity filter
@@ -155,15 +155,15 @@ to full compromise, reachable from any incident with a reconstructed attack chai
   - `| where agent_id == "..."` — Filter by agent
   - `| top 10` — Limit results
   - `| project timestamp, computer...` — Column selection (planned)
-- **Results Table** — Query output with execution time and row count
-- **Saved Queries** — Save queries as reusable detection rules with categories
-- **Quick Reference Guide** — Built-in KQL syntax help panel
+- **Results Table** Query output with execution time and row count
+- **Saved Queries** Save queries as reusable detection rules with categories
+- **Quick Reference Guide** Built-in KQL syntax help panel
 
 ### 🔗 Correlation Engine
 - **Stats**: Active Rules count, Total Hits (all time), Multi-Index Rules count
-- **Create Rules** — Name, correlation logic, severity, risk score (0-100), time window (minutes)
+- **Create Rules** Name, correlation logic, severity, risk score (0-100), time window (minutes)
 - **Rules Table**: Name + logic description, Severity badge, Risk score bar, Window, Index badges, Hit count, Enable/Disable toggle
-- **Multi-Index Correlation** — Rules span across `windows-security`, `network-flow`, etc.
+- **Multi-Index Correlation** Rules span across `windows-security`, `network-flow`, etc.
 - **Built-in Detection Rules**:
   - 🔐 Brute Force Detection (3+ failed logins in 5 min)
   - 🔄 Lateral Movement via RDP
@@ -171,45 +171,45 @@ to full compromise, reachable from any incident with a reconstructed attack chai
   - 🦠 Malware Execution Chain
   - 👤 Account Takeover Pattern
   - 🎫 Kerberoasting Attack
-- **RBAC** — Only admin/t2_analyst can create or toggle rules
+- **RBAC** Only admin/t2_analyst can create or toggle rules
 
 ### 🔴 Threat Intelligence
 - **IOC Stats**: Total IOCs, Active Hits, Intel Feeds count, Average Confidence %
-- **Type Filters** — All, IP, Domain, Hash, URL, Email
-- **Add IOC Form** — Type, value, confidence (0-100%), severity, source, description
+- **Type Filters** All, IP, Domain, Hash, URL, Email
+- **Add IOC Form** Type, value, confidence (0-100%), severity, source, description
 - **IOC Table**: Type badge, Indicator (monospace), Confidence bar, Severity, Hits (red if >10), Source, First Seen
-- **📡 Feed Status Panel** — Feed name, IOC count, active/inactive indicator
+- **📡 Feed Status Panel** Feed name, IOC count, active/inactive indicator
   - MISP, VirusTotal, AbuseIPDB, OTX AlienVault, Recorded Future, NVD NIST
-- **🗺️ Threat Origins** — Geographic breakdown: Russia, China, N. Korea, Iran, Anonymous
+- **🗺️ Threat Origins** Geographic breakdown: Russia, China, N. Korea, Iran, Anonymous
 
 ### 👤 UEBA (User & Entity Behavior Analytics)
 - **Stats**: High Risk Users, Total Anomalies, Users Monitored
 - **Sort Options**: Risk Score, Anomalies, Name
 - **User Risk Table**: Username, Department, Risk Score (color-coded bar), Anomaly count badge, Behavior flags, Location, Last Active
 - **🧠 ML Baseline Deviations**:
-  - Login Time Anomaly — Off-hours access detection
-  - Geo-Velocity — Impossible travel detection
-  - Peer Group Deviation — File access pattern outliers
-  - Data Volume Spike — Download volume exceeding 30-day baseline
+  - Login Time Anomaly Off-hours access detection
+  - Geo-Velocity Impossible travel detection
+  - Peer Group Deviation File access pattern outliers
+  - Data Volume Spike Download volume exceeding 30-day baseline
 
 ### ⚙️ SOAR (Security Orchestration, Automation & Response)
 - **Stats**: Active Playbooks, Total Executions, Avg Response Time, Recent Executions
 - **Playbook Grid** (2 columns):
   - Name + status badge (Active/Paused) + execution count
   - Trigger condition display
-  - **Live Execution Progress** — Step-by-step progress bar with completion percentage
+  - **Live Execution Progress** Step-by-step progress bar with completion percentage
   - Numbered step circles (completed = green checkmark ✓)
   - Execute / Edit buttons (role-gated)
 - **Built-in Playbooks**:
-  - 🔐 Brute Force Response — Block IP, reset password, create ticket, notify SOC
-  - 🦠 Malware Containment — Isolate endpoint, collect forensics, block hash, alert team
-  - 🎣 Phishing Response — Extract IOCs, block sender, scan mailboxes, update filters
-  - 🔑 Privilege Escalation — Revoke tokens, audit access, reset credentials, review logs
+  - 🔐 Brute Force Response Block IP, reset password, create ticket, notify SOC
+  - 🦠 Malware Containment Isolate endpoint, collect forensics, block hash, alert team
+  - 🎣 Phishing Response Extract IOCs, block sender, scan mailboxes, update filters
+  - 🔑 Privilege Escalation Revoke tokens, audit access, reset credentials, review logs
 - **🔗 Integration Connectors** (8):
   - Jira (ticket creation), Slack (SOC notifications), CrowdStrike (endpoint isolation)
   - Palo Alto (firewall block), ServiceNow (ITSM), MS Teams (notifications)
   - MISP (IOC sharing), Email (analyst alerts)
-- **📋 Execution History** — Playbook ID, triggered by, status, steps completed, timestamps
+- **📋 Execution History** Playbook ID, triggered by, status, steps completed, timestamps
 
 ### 🖥️ Agent Management
 - **Agent Stats**: Total Agents, Online (green), Stale (yellow), Offline (red), Events Collected
