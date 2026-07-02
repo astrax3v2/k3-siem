@@ -276,7 +276,8 @@ router.get('/incidents/:id', authenticate, async (req, res) => {
     ORDER BY a.created_at DESC
   `).all(req.params.id);
   const notes = await d.prepare('SELECT * FROM incident_notes WHERE incident_id = ? ORDER BY created_at DESC').all(req.params.id);
-  res.json({ incident, alerts, notes });
+  const processTree = await d.prepare('SELECT * FROM process_nodes WHERE incident_id = ? ORDER BY sequence').all(req.params.id);
+  res.json({ incident, alerts, notes, process_tree: processTree });
 });
 
 router.patch('/incidents/:id', authenticate, authorize(ROLE_T1, ROLE_T2, ROLE_ADMIN), async (req, res) => {

