@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { eventsApi, correlationApi, intelApi, uebaApi, soarApi, incidentsApi } from '../services/api';
 import { useAuth } from './Layout/Auth';
 
@@ -534,6 +534,7 @@ export function SOAR() {
 
 export function IncidentResponse() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [incidents, setIncidents] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -689,6 +690,12 @@ export function IncidentResponse() {
               <div><span style={{ color: 'var(--text3)' }}>Status</span><div style={{ fontWeight: 600 }}>{inc.status}</div></div>
               <div><span style={{ color: 'var(--text3)' }}>Owner</span><div style={{ fontWeight: 600 }}>{inc.owner || '—'}</div></div>
             </div>
+
+            {detail?.process_tree?.length > 0 && (
+              <button className="btn btn-primary btn-sm" style={{ width: '100%', marginTop: 10 }} onClick={() => navigate(`/investigation/${inc.id}`)}>
+                🌳 View Process Tree ({detail.process_tree.length} stages)
+              </button>
+            )}
 
             <div style={{ marginTop: 10 }}>
               <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 6 }}>Update Status</div>

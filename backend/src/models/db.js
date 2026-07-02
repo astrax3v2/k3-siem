@@ -537,6 +537,44 @@ const MIGRATIONS = [
     name: '0003_audit_log_index',
     sql: () => `CREATE INDEX IF NOT EXISTS idx_audit_log_ts ON audit_log(created_at)`,
   },
+  {
+    name: '0004_process_nodes',
+    sql: (dialect) => dialect === 'postgres'
+      ? `CREATE TABLE IF NOT EXISTS process_nodes (
+           id TEXT PRIMARY KEY, incident_id TEXT NOT NULL, parent_id TEXT, sequence INTEGER,
+           pid INTEGER, ppid INTEGER, process_name TEXT, image TEXT, command_line TEXT,
+           hostname TEXT, username TEXT, sha256 TEXT, event_type TEXT,
+           mitre_tactic TEXT, mitre_technique TEXT, severity TEXT DEFAULT 'Info',
+           is_malicious INTEGER DEFAULT 0, first_detected_by TEXT, detection_rule TEXT,
+           auto_analysis TEXT, impact TEXT, remediation TEXT, lessons_learned TEXT,
+           timestamp TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW()
+         )`
+      : `CREATE TABLE IF NOT EXISTS process_nodes (
+           id TEXT PRIMARY KEY, incident_id TEXT NOT NULL, parent_id TEXT, sequence INTEGER,
+           pid INTEGER, ppid INTEGER, process_name TEXT, image TEXT, command_line TEXT,
+           hostname TEXT, username TEXT, sha256 TEXT, event_type TEXT,
+           mitre_tactic TEXT, mitre_technique TEXT, severity TEXT DEFAULT 'Info',
+           is_malicious INTEGER DEFAULT 0, first_detected_by TEXT, detection_rule TEXT,
+           auto_analysis TEXT, impact TEXT, remediation TEXT, lessons_learned TEXT,
+           timestamp TEXT, created_at TEXT DEFAULT (datetime('now'))
+         )`,
+  },
+  {
+    name: '0005_process_nodes_index',
+    sql: () => `CREATE INDEX IF NOT EXISTS idx_process_nodes_incident ON process_nodes(incident_id)`,
+  },
+  {
+    name: '0006_incidents_impact',
+    sql: () => `ALTER TABLE incidents ADD COLUMN impact TEXT`,
+  },
+  {
+    name: '0007_incidents_remediation',
+    sql: () => `ALTER TABLE incidents ADD COLUMN remediation TEXT`,
+  },
+  {
+    name: '0008_incidents_lessons_learned',
+    sql: () => `ALTER TABLE incidents ADD COLUMN lessons_learned TEXT`,
+  },
 ];
 
 async function runMigrations(d) {
