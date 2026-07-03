@@ -4,6 +4,7 @@ import { useAuth } from './Auth';
 
 const NAV = [
   { path: '/', icon: '🏠', label: 'Dashboard' },
+  { path: '/dashboards', icon: '📊', label: 'Dashboard Library' },
   { path: '/alerts', icon: '🚨', label: 'Alert Manager' },
   { path: '/incidents', icon: '🧯', label: 'Incident Response' },
   { path: '/events', icon: '📋', label: 'Event Explorer' },

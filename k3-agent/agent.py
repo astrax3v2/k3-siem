@@ -6,6 +6,7 @@ Sends normalized events to K3 SIEM via the /api/events/ingest endpoint.
 """
 
 import argparse
+import glob
 import json
 import os
 import platform
@@ -37,6 +38,9 @@ DEFAULT_CONFIG = {
     "simulate": False,
     "vuln_scan_enabled": True,
     "nvd_api_key": None,
+    "auto_discover_app_logs": True,
+    "app_log_paths": [],
+    "app_log_max_files": 40,
 }
 
 
@@ -85,38 +89,83 @@ def get_local_ip():
 # Real log collectors
 # ---------------------------------------------------------------------------
 
+def _xml_local(tag):
+    return tag.rsplit('}', 1)[-1] if '}' in tag else tag
+
+
+def parse_wevtutil_xml(raw_output):
+    """Parse `wevtutil qe ... /f:XML` output.
+
+    wevtutil prints one full <Event>...</Event> document per record with no
+    separators (not newline-delimited, not comma-delimited, not JSON despite
+    what /f:json — an invalid value — might suggest). Wrapping the whole
+    stream in a synthetic root lets ElementTree parse it as one document.
+    Returns a list of {"Event": {"System": {...}, "EventData": {...}}} dicts
+    shaped the same way ocsfParser.js's flattenWindowsEvent expects.
+    """
+    import xml.etree.ElementTree as ET
+
+    events = []
+    if not raw_output or not raw_output.strip():
+        return events
+    try:
+        root = ET.fromstring(f"<Events>{raw_output}</Events>")
+    except ET.ParseError:
+        return events
+
+    for ev in root:
+        if _xml_local(ev.tag) != "Event":
+            continue
+        system, event_data = {}, {}
+        for child in ev:
+            tag = _xml_local(child.tag)
+            if tag == "System":
+                for f in child:
+                    ftag = _xml_local(f.tag)
+                    if ftag == "EventID":
+                        system["EventID"] = (f.text or "").strip()
+                    elif ftag == "TimeCreated":
+                        system["TimeCreated"] = {"@SystemTime": f.get("SystemTime", "")}
+                    elif ftag == "Computer":
+                        system["Computer"] = (f.text or "").strip()
+                    elif ftag == "Provider":
+                        system["Provider"] = {"@Name": f.get("Name", "")}
+                    elif ftag == "Level":
+                        system["Level"] = (f.text or "").strip()
+            elif tag == "EventData":
+                for d in child:
+                    name = d.get("Name")
+                    if name:
+                        event_data[name] = d.text or ""
+        events.append({"Event": {"System": system, "EventData": event_data}})
+    return events
+
+
 def collect_windows_security(batch_size=50):
     """Collect Windows Security event logs via wevtutil."""
     events = []
     try:
         result = subprocess.run(
-            ["wevtutil", "qe", "Security", f"/c:{batch_size}", "/f:json", "/rd:true"],
+            ["wevtutil", "qe", "Security", f"/c:{batch_size}", "/f:XML", "/rd:true"],
             capture_output=True, text=True, timeout=30
         )
-        if result.returncode == 0 and result.stdout.strip():
-            for line in result.stdout.strip().split("\n"):
-                line = line.strip().rstrip(",")
-                if not line:
-                    continue
-                try:
-                    evt = json.loads(line)
-                    sys_data = evt.get("Event", {}).get("System", {})
-                    event_data = evt.get("Event", {}).get("EventData", {})
-                    eid = str(sys_data.get("EventID", {}).get("$", sys_data.get("EventID", "")))
-                    events.append({
-                        "timestamp": sys_data.get("TimeCreated", {}).get("@SystemTime", now_iso()),
-                        "source": "Windows Security",
-                        "event_id": eid,
-                        "computer": sys_data.get("Computer", socket.gethostname()),
-                        "username": event_data.get("TargetUserName", event_data.get("SubjectUserName", "")),
-                        "ip_address": event_data.get("IpAddress", get_local_ip()),
-                        "action": map_windows_event_action(eid),
-                        "severity": map_windows_severity(eid),
-                        "raw": json.dumps(evt),
-                        "index": "windows-security",
-                    })
-                except (json.JSONDecodeError, KeyError):
-                    continue
+        if result.returncode == 0:
+            for evt in parse_wevtutil_xml(result.stdout):
+                sys_data = evt["Event"]["System"]
+                event_data = evt["Event"]["EventData"]
+                eid = str(sys_data.get("EventID", ""))
+                events.append({
+                    "timestamp": sys_data.get("TimeCreated", {}).get("@SystemTime", now_iso()),
+                    "source": "Windows Security",
+                    "event_id": eid,
+                    "computer": sys_data.get("Computer", socket.gethostname()),
+                    "username": event_data.get("TargetUserName", event_data.get("SubjectUserName", "")),
+                    "ip_address": event_data.get("IpAddress", get_local_ip()),
+                    "action": map_windows_event_action(eid),
+                    "severity": map_windows_severity(eid),
+                    "raw": json.dumps(evt),
+                    "index": "windows-security",
+                })
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
         print(f"[Collector] Windows Security collection failed: {e}")
     return events
@@ -127,35 +176,63 @@ def collect_windows_system(batch_size=50):
     events = []
     try:
         result = subprocess.run(
-            ["wevtutil", "qe", "System", f"/c:{batch_size}", "/f:json", "/rd:true"],
+            ["wevtutil", "qe", "System", f"/c:{batch_size}", "/f:XML", "/rd:true"],
             capture_output=True, text=True, timeout=30
         )
-        if result.returncode == 0 and result.stdout.strip():
-            for line in result.stdout.strip().split("\n"):
-                line = line.strip().rstrip(",")
-                if not line:
-                    continue
-                try:
-                    evt = json.loads(line)
-                    sys_data = evt.get("Event", {}).get("System", {})
-                    eid = str(sys_data.get("EventID", {}).get("$", sys_data.get("EventID", "")))
-                    events.append({
-                        "timestamp": sys_data.get("TimeCreated", {}).get("@SystemTime", now_iso()),
-                        "source": "Windows System",
-                        "event_id": eid,
-                        "computer": sys_data.get("Computer", socket.gethostname()),
-                        "username": "",
-                        "ip_address": get_local_ip(),
-                        "action": "System Event",
-                        "severity": "Info",
-                        "raw": json.dumps(evt),
-                        "index": "windows-system",
-                    })
-                except (json.JSONDecodeError, KeyError):
-                    continue
+        if result.returncode == 0:
+            for evt in parse_wevtutil_xml(result.stdout):
+                sys_data = evt["Event"]["System"]
+                eid = str(sys_data.get("EventID", ""))
+                events.append({
+                    "timestamp": sys_data.get("TimeCreated", {}).get("@SystemTime", now_iso()),
+                    "source": "Windows System",
+                    "event_id": eid,
+                    "computer": sys_data.get("Computer", socket.gethostname()),
+                    "username": "",
+                    "ip_address": get_local_ip(),
+                    "action": "System Event",
+                    "severity": "Info",
+                    "raw": json.dumps(evt),
+                    "index": "windows-system",
+                })
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
         print(f"[Collector] Windows System collection failed: {e}")
     return events
+
+
+def collect_windows_application(batch_size=50):
+    """Collect Windows Application event logs (installed apps/services logging via ETW)."""
+    events = []
+    try:
+        result = subprocess.run(
+            ["wevtutil", "qe", "Application", f"/c:{batch_size}", "/f:XML", "/rd:true"],
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode == 0:
+            for evt in parse_wevtutil_xml(result.stdout):
+                sys_data = evt["Event"]["System"]
+                eid = str(sys_data.get("EventID", ""))
+                app_name = sys_data.get("Provider", {}).get("@Name", "Application")
+                level_val = sys_data.get("Level", "")
+                events.append({
+                    "timestamp": sys_data.get("TimeCreated", {}).get("@SystemTime", now_iso()),
+                    "source": f"AppLog:{app_name}",
+                    "event_id": eid,
+                    "computer": sys_data.get("Computer", socket.gethostname()),
+                    "username": "",
+                    "ip_address": get_local_ip(),
+                    "action": f"{app_name} Event {eid}",
+                    "severity": map_windows_app_level(level_val),
+                    "raw": json.dumps(evt),
+                    "index": "windows-application",
+                })
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+        print(f"[Collector] Windows Application collection failed: {e}")
+    return events
+
+
+def map_windows_app_level(level):
+    return {"1": "Critical", "2": "High", "3": "Medium", "4": "Info", "0": "Info"}.get(str(level), "Info")
 
 
 def collect_linux_syslog(batch_size=50):
@@ -512,15 +589,21 @@ class SIEMClient:
 COLLECTORS = {
     "windows_security": collect_windows_security,
     "windows_system": collect_windows_system,
-    "windows_application": lambda bs: [],
+    "windows_application": collect_windows_application,
     "linux_syslog": collect_linux_syslog,
     "linux_auth": collect_linux_auth,
 }
 
 
-def collect_real_logs(sources, batch_size):
+def collect_real_logs(sources, batch_size, cfg=None, state=None):
     all_events = []
     for src in sources:
+        if src == "app_logs":
+            try:
+                all_events.extend(collect_app_logs(cfg or {}, state if state is not None else {}))
+            except Exception as e:
+                print(f"[Collector] Error in app_logs: {e}")
+            continue
         collector = COLLECTORS.get(src)
         if collector:
             try:
@@ -528,6 +611,173 @@ def collect_real_logs(sources, batch_size):
             except Exception as e:
                 print(f"[Collector] Error in {src}: {e}")
     return all_events
+
+
+# ---------------------------------------------------------------------------
+# Installed-application log discovery & tailing
+# ---------------------------------------------------------------------------
+
+WINDOWS_APP_LOG_GLOBS = [
+    r"C:\inetpub\logs\LogFiles\**\*.log",
+    r"C:\ProgramData\*\Logs\*.log",
+    r"C:\ProgramData\*\logs\*.log",
+    r"C:\Program Files\*\logs\*.log",
+    r"C:\Program Files\*\Logs\*.log",
+    r"C:\Program Files (x86)\*\logs\*.log",
+]
+
+LINUX_APP_LOG_GLOBS = [
+    "/var/log/*.log",
+    "/var/log/nginx/*.log",
+    "/var/log/apache2/*.log",
+    "/var/log/httpd/*.log",
+    "/var/log/mysql/*.log",
+    "/var/log/postgresql/*.log",
+    "/var/log/docker.log",
+]
+
+_STATE_LOCK = threading.Lock()
+
+
+def load_state(state_path):
+    if os.path.exists(state_path):
+        try:
+            with open(state_path) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {"files": {}}
+
+
+def save_state(state_path, state):
+    tmp_path = f"{state_path}.tmp"
+    try:
+        with _STATE_LOCK:
+            with open(tmp_path, "w") as f:
+                json.dump(state, f)
+            os.replace(tmp_path, state_path)
+    except OSError as e:
+        print(f"[Agent] Failed to save state: {e}")
+
+
+def discover_app_log_paths(cfg):
+    """Find candidate installed-application log files, capped by app_log_max_files.
+
+    Dedupes via os.path.normcase so the same physical file matched by two glob
+    patterns under different casing (e.g. "...\\Logs\\..." and "...\\logs\\...",
+    which are identical on Windows' case-insensitive filesystem) is only tailed once.
+    """
+    max_files = int(cfg.get("app_log_max_files", 40))
+    found = []
+    seen = set()
+
+    def add(p):
+        key = os.path.normcase(os.path.abspath(p))
+        if key in seen:
+            return False
+        seen.add(key)
+        found.append(p)
+        return True
+
+    for p in cfg.get("app_log_paths", []) or []:
+        if os.path.isfile(p):
+            add(p)
+
+    if cfg.get("auto_discover_app_logs", True):
+        patterns = WINDOWS_APP_LOG_GLOBS if platform.system() == "Windows" else LINUX_APP_LOG_GLOBS
+        for pattern in patterns:
+            try:
+                for p in glob.glob(pattern, recursive=True):
+                    if os.path.isfile(p):
+                        add(p)
+                    if len(found) >= max_files:
+                        break
+            except OSError:
+                continue
+            if len(found) >= max_files:
+                break
+
+    return found[:max_files]
+
+
+def read_new_lines(path, state, max_lines=200):
+    """Tail a log file since the last recorded byte offset, tracked in `state`."""
+    files_state = state.setdefault("files", {})
+    entry = files_state.get(path, {"offset": 0})
+
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        return []
+
+    offset = entry.get("offset", 0)
+    if size < offset:
+        # File was truncated or rotated — start over.
+        offset = 0
+
+    # Read in binary mode and split on exact byte boundaries — text-mode iteration
+    # (`for line in f`) disables `f.tell()` once read-ahead buffering kicks in, so
+    # offsets can't be tracked accurately that way.
+    try:
+        with open(path, "rb") as f:
+            f.seek(offset)
+            chunk = f.read()
+    except OSError as e:
+        print(f"[Collector] Failed to read {path}: {e}")
+        return []
+
+    raw_lines = chunk.split(b"\n")
+    # Drop the last element: if the chunk ends with '\n' it's an empty string;
+    # otherwise it's a partial line still being written, so leave it unread.
+    complete_lines = raw_lines[:-1][:max_lines]
+    consumed_bytes = sum(len(l) + 1 for l in complete_lines)
+    entry["offset"] = offset + consumed_bytes
+    files_state[path] = entry
+
+    lines = [l.decode("utf-8", errors="ignore").rstrip("\r") for l in complete_lines]
+    lines = [l for l in lines if l]
+    return lines
+
+
+def guess_log_severity(line):
+    low = line.lower()
+    if "fatal" in low or "critical" in low or "panic" in low:
+        return "Critical"
+    if "error" in low or "exception" in low or "fail" in low:
+        return "High"
+    if "warn" in low:
+        return "Medium"
+    return "Info"
+
+
+def collect_app_logs(cfg, state):
+    """Discover installed-application log files and ship any new lines since last read."""
+    now = time.time()
+    cache = state.setdefault("_discovery_cache", {"paths": [], "at": 0})
+    if now - cache.get("at", 0) > 300 or not cache.get("paths"):
+        cache["paths"] = discover_app_log_paths(cfg)
+        cache["at"] = now
+
+    events = []
+    hostname = socket.gethostname()
+    ip = get_local_ip()
+    for path in cache["paths"]:
+        for line in read_new_lines(path, state):
+            app_name = os.path.splitext(os.path.basename(path))[0]
+            events.append({
+                "timestamp": now_iso(),
+                "source": f"AppLog:{app_name}",
+                "event_id": "app_log",
+                "computer": hostname,
+                "username": "",
+                "ip_address": ip,
+                "action": line[:300],
+                "severity": guess_log_severity(line),
+                "raw": line,
+                "index": "application-logs",
+            })
+
+    return events
 
 
 # ---------------------------------------------------------------------------
@@ -917,6 +1167,8 @@ def main():
     args = parser.parse_args()
 
     cfg = load_config(args.config)
+    state_path = os.environ.get("K3_STATE_PATH", "agent_state.json")
+    state = load_state(state_path)
     if args.simulate:
         cfg["simulate"] = True
 
@@ -992,7 +1244,8 @@ def main():
             if cfg["simulate"]:
                 events = generate_simulated_events(simulate_os or "windows", hostname, cfg["batch_size"])
             else:
-                events = collect_real_logs(cfg.get("sources", []), cfg["batch_size"])
+                events = collect_real_logs(cfg.get("sources", []), cfg["batch_size"], cfg=cfg, state=state)
+                save_state(state_path, state)
 
             if events:
                 sent = client.send_events(events)
@@ -1025,6 +1278,7 @@ def main():
                 break
             time.sleep(1)
 
+    save_state(state_path, state)
     print(f"[Agent] Stopped. Total events sent: {total_sent}")
 
 

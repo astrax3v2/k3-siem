@@ -23,6 +23,7 @@ const eventsRouter = require('./routes/events');
 const agentsRouter = require('./routes/agents');
 const deployRouter = require('./routes/deploy');
 const ocsfRouter   = require('./routes/ocsf');
+const dashboardsRouter = require('./routes/dashboardLibrary');
 const apiRouter    = require('./routes/api');
 
 const app  = express();
@@ -66,6 +67,7 @@ app.use('/api/events', eventsRouter);
 app.use('/api/agents', agentsRouter);
 app.use('/api/deploy', deployRouter);
 app.use('/api/ocsf',   ocsfRouter);
+app.use('/api/dashboards', dashboardsRouter);
 app.use('/api',        apiRouter);
 
 if (isProd) {

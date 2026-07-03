@@ -12,5 +12,13 @@ sources:
   - windows_application
   - linux_syslog
   - linux_auth
+  - app_logs
+
+# App log discovery: ships logs from installed applications (IIS, nginx,
+# MySQL/Postgres, Docker, etc.) found on the agent's machine, in addition
+# to the OS-level sources above.
+auto_discover_app_logs: true
+app_log_paths: []
+app_log_max_files: 40
 
 simulate: false

@@ -104,6 +104,15 @@ export const ocsfApi = {
   event: (id) => api.get(`/ocsf/events/${id}`),
 };
 
+export const dashboardsApi = {
+  templates: () => api.get('/dashboards/templates'),
+  list: () => api.get('/dashboards'),
+  get: (id) => api.get(`/dashboards/${id}`),
+  create: (data) => api.post('/dashboards', data),
+  update: (id, data) => api.patch(`/dashboards/${id}`, data),
+  remove: (id) => api.delete(`/dashboards/${id}`),
+};
+
 export const incidentsApi = {
   list: (params) => api.get('/incidents', { params }),
   create: (data) => api.post('/incidents', data),

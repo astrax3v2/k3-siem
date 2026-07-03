@@ -575,6 +575,24 @@ const MIGRATIONS = [
     name: '0008_incidents_lessons_learned',
     sql: () => `ALTER TABLE incidents ADD COLUMN lessons_learned TEXT`,
   },
+  {
+    name: '0009_dashboards',
+    sql: (dialect) => dialect === 'postgres'
+      ? `CREATE TABLE IF NOT EXISTS dashboards (
+           id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, category TEXT,
+           owner TEXT NOT NULL, is_shared INTEGER DEFAULT 0, widgets TEXT NOT NULL,
+           created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
+         )`
+      : `CREATE TABLE IF NOT EXISTS dashboards (
+           id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, category TEXT,
+           owner TEXT NOT NULL, is_shared INTEGER DEFAULT 0, widgets TEXT NOT NULL,
+           created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now'))
+         )`,
+  },
+  {
+    name: '0010_dashboards_owner_index',
+    sql: () => `CREATE INDEX IF NOT EXISTS idx_dashboards_owner ON dashboards(owner)`,
+  },
 ];
 
 async function runMigrations(d) {
