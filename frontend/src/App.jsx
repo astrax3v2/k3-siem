@@ -11,6 +11,9 @@ import AssetInventory from './components/Inventory/AssetInventory';
 import VulnerabilityScanner from './components/Inventory/VulnerabilityScanner';
 import OCSFParser from './components/OCSF/OCSFParser';
 import ProcessTree from './components/Investigation/ProcessTree';
+import DashboardGallery from './components/Dashboards/DashboardGallery';
+import DashboardViewer from './components/Dashboards/DashboardViewer';
+import DashboardBuilder from './components/Dashboards/DashboardBuilder';
 import { useWebSocket } from './hooks/useWebSocket';
 import './index.css';
 
@@ -45,6 +48,10 @@ function ProtectedApp() {
         <Route path="/vulnerabilities" element={<VulnerabilityScanner />} />
         <Route path="/ocsf" element={<OCSFParser />} />
         <Route path="/investigation/:id" element={<ProcessTree />} />
+        <Route path="/dashboards" element={<DashboardGallery />} />
+        <Route path="/dashboards/new" element={<DashboardBuilder liveEvents={liveEvents} liveAlerts={liveAlerts} />} />
+        <Route path="/dashboards/:id/edit" element={<DashboardBuilder liveEvents={liveEvents} liveAlerts={liveAlerts} />} />
+        <Route path="/dashboards/:id" element={<DashboardViewer liveEvents={liveEvents} liveAlerts={liveAlerts} />} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </Layout>
