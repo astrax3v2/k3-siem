@@ -18,6 +18,7 @@ const NAV = [
   { path: '/inventory', icon: '📦', label: 'Inventory' },
   { path: '/vulnerabilities', icon: '🛡️', label: 'Vulnerabilities' },
   { path: '/ocsf', icon: '🧬', label: 'OCSF Parser' },
+  { path: '/admin/teams', icon: '👥', label: 'Teams & Users', adminOnly: true },
 ];
 
 export default function Layout({ children, connected, liveAlertCount = 0 }) {
@@ -53,7 +54,7 @@ export default function Layout({ children, connected, liveAlertCount = 0 }) {
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         {/* Sidebar */}
         <div style={{ width: 196, background: 'var(--bg2)', borderRight: '1px solid var(--border)', flexShrink: 0, display: 'flex', flexDirection: 'column', padding: '8px 0' }}>
-          {NAV.map(n => {
+          {NAV.filter(n => !n.adminOnly || user?.role === 'admin').map(n => {
             const active = location.pathname === n.path;
             return (
               <Link key={n.path} to={n.path} style={{ textDecoration: 'none' }}>

@@ -15,6 +15,7 @@ import ProcessTree from './components/Investigation/ProcessTree';
 import DashboardGallery from './components/Dashboards/DashboardGallery';
 import DashboardViewer from './components/Dashboards/DashboardViewer';
 import DashboardBuilder from './components/Dashboards/DashboardBuilder';
+import TeamManagement from './components/Admin/TeamManagement';
 import { useWebSocket } from './hooks/useWebSocket';
 import './index.css';
 
@@ -54,6 +55,7 @@ function ProtectedApp() {
         <Route path="/dashboards/new" element={<DashboardBuilder liveEvents={liveEvents} liveAlerts={liveAlerts} />} />
         <Route path="/dashboards/:id/edit" element={<DashboardBuilder liveEvents={liveEvents} liveAlerts={liveAlerts} />} />
         <Route path="/dashboards/:id" element={<DashboardViewer liveEvents={liveEvents} liveAlerts={liveAlerts} />} />
+        <Route path="/admin/teams" element={user?.role === 'admin' ? <TeamManagement /> : <Navigate to="/" />} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </Layout>

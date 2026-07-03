@@ -123,4 +123,15 @@ export const incidentsApi = {
   linkAlert: (id, alertId) => api.post(`/incidents/${id}/alerts`, { alert_id: alertId }),
 };
 
+export const teamsApi = {
+  list: () => api.get('/teams'),
+  create: (data) => api.post('/teams', data),
+  remove: (id) => api.delete(`/teams/${id}`),
+};
+
+export const usersApi = {
+  list: () => api.get('/users'),
+  update: (id, data) => api.patch(`/users/${id}`, data),
+};
+
 export default api;

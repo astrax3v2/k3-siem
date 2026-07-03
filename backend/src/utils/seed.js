@@ -28,17 +28,27 @@ async function seed() {
 
   await d.exec(`DELETE FROM playbook_executions; DELETE FROM ueba_scores; DELETE FROM kql_saved_queries;
           DELETE FROM intel_feeds; DELETE FROM process_nodes; DELETE FROM incident_alerts; DELETE FROM incident_notes; DELETE FROM incidents; DELETE FROM iocs; DELETE FROM alerts; DELETE FROM events;
-          DELETE FROM playbooks; DELETE FROM correlation_rules; DELETE FROM users;`);
+          DELETE FROM playbooks; DELETE FROM correlation_rules; DELETE FROM users; DELETE FROM teams;
+          DELETE FROM assets; DELETE FROM agents;`);
   console.log('[Seed] Cleared');
+
+  // Teams — team-scoped RBAC (see services/teamScope.js): analysts only see their team's
+  // items plus unassigned ones, so seed a couple of teams with real members/agents to make
+  // that actually demonstrable rather than everything landing in the shared inbox.
+  const insTeam = d.prepare('INSERT INTO teams(id, name, description) VALUES(?,?,?)');
+  const teamBlue = uuidv4(), teamRed = uuidv4();
+  await insTeam.run(teamBlue, 'Blue Team', 'Defensive monitoring and incident response');
+  await insTeam.run(teamRed, 'Red Team', 'Offensive security and adversary emulation');
+  console.log('[Seed] Teams: 2');
 
   // Users
   const pwHash = bcrypt.hashSync('K3@2026', 10);
-  const insU = d.prepare(`INSERT INTO users(id,username,email,password_hash,role,full_name,department) VALUES(?,?,?,?,?,?,?)`);
+  const insU = d.prepare(`INSERT INTO users(id,username,email,password_hash,role,full_name,department,team_id) VALUES(?,?,?,?,?,?,?,?)`);
   for (const r of [
-    [uuidv4(),'pbasnet','pbasnet@k3siem.local',pwHash,'admin','Prem Basnet','Security Operations'],
-    [uuidv4(),'jmaharjan','jmaharjan@k3siem.local',pwHash,'t2_analyst','Jenan Maharjan','Security Operations'],
-    [uuidv4(),'bpaudel','bpaudel@k3siem.local',pwHash,'t2_analyst','Bamdev Paudel','Security Operations'],
-    [uuidv4(),'analyst1','analyst1@k3siem.local',pwHash,'t1_analyst','SOC Analyst','Security Operations'],
+    [uuidv4(),'pbasnet','pbasnet@k3siem.local',pwHash,'admin','Prem Basnet','Security Operations',null],
+    [uuidv4(),'jmaharjan','jmaharjan@k3siem.local',pwHash,'t2_analyst','Jenan Maharjan','Security Operations',teamBlue],
+    [uuidv4(),'bpaudel','bpaudel@k3siem.local',pwHash,'t2_analyst','Bamdev Paudel','Security Operations',teamRed],
+    [uuidv4(),'analyst1','analyst1@k3siem.local',pwHash,'t1_analyst','SOC Analyst','Security Operations',teamBlue],
   ]) await insU.run(...r);
   console.log('[Seed] Users: 4');
 
@@ -283,39 +293,39 @@ async function seed() {
   console.log('[Seed] Intel feeds: 6');
 
   // Agents + Assets
-  const insAgent = d.prepare('INSERT INTO agents(id, hostname, os, ip, status, agent_version, tags, collected_sources, events_sent, last_heartbeat) VALUES(?,?,?,?,?,?,?,?,?,?)');
+  const insAgent = d.prepare('INSERT INTO agents(id, hostname, os, ip, status, agent_version, tags, collected_sources, events_sent, last_heartbeat, team_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)');
   const insAsset = d.prepare('INSERT INTO assets(id, agent_id, hostname, os_name, os_version, os_arch, cpu_model, cpu_cores, ram_total_gb, disk_total_gb, disk_used_gb, network_interfaces, installed_software, running_services, open_ports, local_users, antivirus_status, firewall_enabled, last_patch_date, uptime_hours, domain, serial_number) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
 
   const agentsData = [
-    { hostname: 'WS-PC-001', os: 'Windows 11 Pro', ip: '192.168.1.66', version: '1.0.0', sources: ['Windows Security', 'CrowdStrike EDR'], events: 1247,
+    { hostname: 'WS-PC-001', os: 'Windows 11 Pro', ip: '192.168.1.66', version: '1.0.0', sources: ['Windows Security', 'CrowdStrike EDR'], events: 1247, team: teamBlue,
       asset: { os_name: 'Windows 11 Pro', os_version: '10.0.22631', os_arch: 'x86_64', cpu_model: 'Intel Core i7-13700K', cpu_cores: 16, ram: 16.0, disk: 512.0, disk_used: 287.3, av: 'CrowdStrike Falcon', fw: 1, patch: '2026-06-15', uptime: 168.5, domain: 'corp.k3sec.io', serial: 'K3-WS-001',
         net: [{"name":"Ethernet","ip":"192.168.1.66","mac":"00:1A:2B:3C:4D:5E"}],
         sw: [{"name":"CrowdStrike Falcon","version":"7.10"},{"name":"Microsoft 365","version":"16.0"},{"name":"Chrome","version":"126.0"},{"name":"VS Code","version":"1.92"},{"name":"Python 3.12","version":"3.12.4"},{"name":"Slack","version":"4.39"},{"name":"Zoom","version":"6.1"},{"name":"7-Zip","version":"24.07"}],
         svc: [{"name":"CrowdStrike","status":"running"},{"name":"Windows Defender","status":"running"},{"name":"DNS Client","status":"running"}],
         ports: [{"port":135,"proto":"tcp"},{"port":445,"proto":"tcp"},{"port":3389,"proto":"tcp"}],
         users: [{"name":"john.doe"},{"name":"Administrator"}] }},
-    { hostname: 'SRV-UBUNTU-01', os: 'Ubuntu 24.04 LTS', ip: '10.0.1.50', version: '1.0.0', sources: ['Linux Syslog', 'OSSEC HIDS'], events: 3892,
+    { hostname: 'SRV-UBUNTU-01', os: 'Ubuntu 24.04 LTS', ip: '10.0.1.50', version: '1.0.0', sources: ['Linux Syslog', 'OSSEC HIDS'], events: 3892, team: teamRed,
       asset: { os_name: 'Ubuntu 24.04 LTS', os_version: '6.8.0-45-generic', os_arch: 'x86_64', cpu_model: 'AMD EPYC 7763', cpu_cores: 8, ram: 64.0, disk: 1000.0, disk_used: 423.7, av: 'ClamAV', fw: 1, patch: '2026-06-20', uptime: 744.2, domain: 'srv.k3sec.io', serial: 'K3-SRV-001',
         net: [{"name":"eth0","ip":"10.0.1.50","mac":"02:42:AC:11:00:02"}],
         sw: [{"name":"openssh-server","version":"9.6p1"},{"name":"nginx","version":"1.24.0"},{"name":"postgresql-16","version":"16.3"},{"name":"docker-ce","version":"27.1"},{"name":"python3","version":"3.12.3"},{"name":"clamav","version":"1.3.1"},{"name":"fail2ban","version":"1.0.2"}],
         svc: [{"name":"sshd","status":"running"},{"name":"nginx","status":"running"},{"name":"postgresql","status":"running"},{"name":"docker","status":"running"},{"name":"clamav-daemon","status":"running"}],
         ports: [{"port":22,"proto":"tcp"},{"port":80,"proto":"tcp"},{"port":443,"proto":"tcp"},{"port":5432,"proto":"tcp"}],
         users: [{"name":"root"},{"name":"ubuntu"},{"name":"deploy"},{"name":"postgres"}] }},
-    { hostname: 'FW-PALOALTO-01', os: 'PAN-OS 11.1', ip: '203.0.113.1', version: '1.0.0', sources: ['Palo Alto Firewall', 'Network IDS'], events: 8521,
+    { hostname: 'FW-PALOALTO-01', os: 'PAN-OS 11.1', ip: '203.0.113.1', version: '1.0.0', sources: ['Palo Alto Firewall', 'Network IDS'], events: 8521, team: null,
       asset: { os_name: 'PAN-OS 11.1', os_version: '11.1.3', os_arch: 'arm64', cpu_model: 'Cavium Octeon III', cpu_cores: 4, ram: 16.0, disk: 240.0, disk_used: 45.2, av: 'WildFire', fw: 1, patch: '2026-06-10', uptime: 2160.0, domain: 'fw.k3sec.io', serial: 'K3-FW-001',
         net: [{"name":"ethernet1/1","ip":"203.0.113.1","mac":"00:1B:17:00:01:01"},{"name":"ethernet1/2","ip":"10.0.0.1","mac":"00:1B:17:00:01:02"}],
         sw: [{"name":"PAN-OS","version":"11.1.3"},{"name":"Threat Prevention","version":"8832"},{"name":"WildFire","version":"832416"},{"name":"GlobalProtect","version":"6.2.1"}],
         svc: [{"name":"mgmtsrvr","status":"running"},{"name":"configd","status":"running"},{"name":"logrcvr","status":"running"}],
         ports: [{"port":443,"proto":"tcp"},{"port":22,"proto":"tcp"}],
         users: [{"name":"admin"},{"name":"panorama-svc"}] }},
-    { hostname: 'WS-LAPTOP-003', os: 'Windows 11 Pro', ip: '192.168.1.102', version: '1.0.0', sources: ['Windows Security'], events: 456,
+    { hostname: 'WS-LAPTOP-003', os: 'Windows 11 Pro', ip: '192.168.1.102', version: '1.0.0', sources: ['Windows Security'], events: 456, team: teamBlue,
       asset: { os_name: 'Windows 11 Pro', os_version: '10.0.22631', os_arch: 'x86_64', cpu_model: 'Intel Core i5-1340P', cpu_cores: 12, ram: 8.0, disk: 256.0, disk_used: 198.4, av: 'Windows Defender', fw: 1, patch: '2026-06-01', uptime: 72.3, domain: 'corp.k3sec.io', serial: 'K3-WS-003',
         net: [{"name":"Wi-Fi","ip":"192.168.1.102","mac":"AA:BB:CC:DD:EE:FF"}],
         sw: [{"name":"Windows Defender","version":"4.18"},{"name":"Chrome","version":"126.0"},{"name":"Microsoft 365","version":"16.0"}],
         svc: [{"name":"Windows Defender","status":"running"},{"name":"Windows Update","status":"running"}],
         ports: [{"port":135,"proto":"tcp"},{"port":445,"proto":"tcp"}],
         users: [{"name":"jane.smith"},{"name":"Administrator"}] }},
-    { hostname: 'SRV-DB-02', os: 'Ubuntu 22.04 LTS', ip: '10.0.1.55', version: '1.0.0', sources: ['Linux Syslog'], events: 2103,
+    { hostname: 'SRV-DB-02', os: 'Ubuntu 22.04 LTS', ip: '10.0.1.55', version: '1.0.0', sources: ['Linux Syslog'], events: 2103, team: teamRed,
       asset: { os_name: 'Ubuntu 22.04 LTS', os_version: '5.15.0-119-generic', os_arch: 'x86_64', cpu_model: 'AMD EPYC 7543', cpu_cores: 16, ram: 128.0, disk: 2000.0, disk_used: 1247.0, av: 'None', fw: 0, patch: '2026-04-15', uptime: 1440.0, domain: 'srv.k3sec.io', serial: 'K3-SRV-002',
         net: [{"name":"eth0","ip":"10.0.1.55","mac":"02:42:AC:11:00:05"}],
         sw: [{"name":"postgresql-14","version":"14.12"},{"name":"openssh-server","version":"8.9"},{"name":"python3","version":"3.10.12"}],
@@ -326,11 +336,19 @@ async function seed() {
 
   for (const ag of agentsData) {
     const agId = uuidv4();
-    await insAgent.run(agId, ag.hostname, ag.os, ag.ip, 'offline', ag.version, JSON.stringify([]), JSON.stringify(ag.sources), ag.events, ago(rand(60000, 600000)));
+    await insAgent.run(agId, ag.hostname, ag.os, ag.ip, 'offline', ag.version, JSON.stringify([]), JSON.stringify(ag.sources), ag.events, ago(rand(60000, 600000)), ag.team || null);
     const a = ag.asset;
     await insAsset.run(uuidv4(), agId, ag.hostname, a.os_name, a.os_version, a.os_arch, a.cpu_model, a.cpu_cores, a.ram, a.disk, a.disk_used, JSON.stringify(a.net), JSON.stringify(a.sw), JSON.stringify(a.svc), JSON.stringify(a.ports), JSON.stringify(a.users), a.av, a.fw, a.patch, a.uptime, a.domain, a.serial);
   }
   console.log('[Seed] Agents: 5, Assets: 5');
+
+  // Register 2 more bare agents whose hostnames match the demo alert generator's COMPUTERS
+  // pool (WS-001, SRV-001, below) — without these, the team scope's asset->agent hostname
+  // join has nothing to match and every seeded alert would land in the unassigned inbox.
+  for (const { hostname, team } of [{ hostname: 'WS-001', team: teamBlue }, { hostname: 'SRV-001', team: teamRed }]) {
+    await insAgent.run(uuidv4(), hostname, 'Windows 11 Pro', '192.168.1.50', 'offline', '1.0.0', JSON.stringify([]), JSON.stringify([]), 0, ago(rand(60000, 600000)), team);
+  }
+  console.log('[Seed] Team-scoping demo agents: 2 (WS-001 -> Blue Team, SRV-001 -> Red Team)');
 
   console.log('\n✅ Seed complete!');
   console.log('   Login: pbasnet / K3@2026');

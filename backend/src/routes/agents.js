@@ -5,6 +5,7 @@ const { db, sqlNowMinus } = require('../models/db');
 const { authenticate, authorize } = require('../middleware/auth');
 const { INGEST_API_KEY } = require('../config');
 const { logAction } = require('../services/audit');
+const { isAdmin, scopeClause, guardTeamAccess } = require('../services/teamScope');
 const router = express.Router();
 
 function apiKeyAuth(req, res, next) {
@@ -51,7 +52,9 @@ router.post('/:id/heartbeat', apiKeyAuth, async (req, res) => {
 
 router.get('/', authenticate, async (req, res) => {
   const d = db();
-  const agents = await d.prepare('SELECT * FROM agents ORDER BY registered_at DESC').all();
+  const scope = scopeClause(req.user, 'ag.team_id');
+  const wc = scope.clause ? `WHERE ${scope.clause}` : '';
+  const agents = await d.prepare(`SELECT ag.*, t.name as team_name FROM agents ag LEFT JOIN teams t ON t.id = ag.team_id ${wc} ORDER BY ag.registered_at DESC`).all(...scope.params);
 
   const now = Date.now();
   const enriched = agents.map(a => {
@@ -93,8 +96,9 @@ router.get('/stats', authenticate, async (req, res) => {
 
 router.get('/:id', authenticate, async (req, res) => {
   const d = db();
-  const agent = await d.prepare('SELECT * FROM agents WHERE id = ?').get(req.params.id);
+  const agent = await d.prepare('SELECT ag.*, t.name as team_name FROM agents ag LEFT JOIN teams t ON t.id = ag.team_id WHERE ag.id = ?').get(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent not found' });
+  if (!guardTeamAccess(res, req.user, agent.team_id)) return;
 
   const eventCount = (await d.prepare('SELECT COUNT(*) as cnt FROM events WHERE agent_id = ?').get(req.params.id))?.cnt || 0;
   const recentEvents = await d.prepare('SELECT * FROM events WHERE agent_id = ? ORDER BY timestamp DESC LIMIT 20').all(req.params.id);
@@ -109,16 +113,21 @@ router.get('/:id', authenticate, async (req, res) => {
 });
 
 router.patch('/:id', authenticate, authorize('admin', 't2_analyst'), async (req, res) => {
-  const { tags, config } = req.body;
+  const { tags, config, team_id } = req.body;
   const d = db();
-  const agent = await d.prepare('SELECT id FROM agents WHERE id = ?').get(req.params.id);
+  const agent = await d.prepare('SELECT id, team_id FROM agents WHERE id = ?').get(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent not found' });
+  if (!guardTeamAccess(res, req.user, agent.team_id)) return;
 
   if (tags !== undefined) {
     await d.prepare('UPDATE agents SET tags = ? WHERE id = ?').run(JSON.stringify(tags), req.params.id);
   }
   if (config !== undefined) {
     await d.prepare('UPDATE agents SET config = ? WHERE id = ?').run(JSON.stringify(config), req.params.id);
+  }
+  // Assigning which team owns/monitors an endpoint is an admin-only action.
+  if (team_id !== undefined && isAdmin(req.user)) {
+    await d.prepare('UPDATE agents SET team_id = ? WHERE id = ?').run(team_id, req.params.id);
   }
 
   res.json({ status: 'updated' });

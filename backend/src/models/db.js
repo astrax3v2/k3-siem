@@ -617,6 +617,44 @@ const MIGRATIONS = [
     name: '0014_incidents_acknowledged_at',
     sql: () => `ALTER TABLE incidents ADD COLUMN acknowledged_at TEXT`,
   },
+  {
+    // Team-scoped RBAC: analysts only see items belonging to their team (plus unassigned
+    // items, visible to everyone as a shared inbox). See services/teamScope.js.
+    name: '0015_teams',
+    sql: (dialect) => dialect === 'postgres'
+      ? `CREATE TABLE IF NOT EXISTS teams (
+           id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, description TEXT,
+           created_at TIMESTAMPTZ DEFAULT NOW()
+         )`
+      : `CREATE TABLE IF NOT EXISTS teams (
+           id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, description TEXT,
+           created_at TEXT DEFAULT (datetime('now'))
+         )`,
+  },
+  {
+    name: '0016_users_team_id',
+    sql: () => `ALTER TABLE users ADD COLUMN team_id TEXT`,
+  },
+  {
+    name: '0017_agents_team_id',
+    sql: () => `ALTER TABLE agents ADD COLUMN team_id TEXT`,
+  },
+  {
+    name: '0018_incidents_team_id',
+    sql: () => `ALTER TABLE incidents ADD COLUMN team_id TEXT`,
+  },
+  {
+    name: '0019_users_team_id_index',
+    sql: () => `CREATE INDEX IF NOT EXISTS idx_users_team_id ON users(team_id)`,
+  },
+  {
+    name: '0020_agents_team_id_index',
+    sql: () => `CREATE INDEX IF NOT EXISTS idx_agents_team_id ON agents(team_id)`,
+  },
+  {
+    name: '0021_incidents_team_id_index',
+    sql: () => `CREATE INDEX IF NOT EXISTS idx_incidents_team_id ON incidents(team_id)`,
+  },
 ];
 
 async function runMigrations(d) {

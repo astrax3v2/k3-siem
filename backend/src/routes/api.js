@@ -6,9 +6,11 @@ const { authenticate, authorize, ROLE_ADMIN, ROLE_T1, ROLE_T2 } = require('../mi
 const { runStep } = require('../services/connectors');
 const { logAction } = require('../services/audit');
 const { computeSla } = require('../services/slaPolicy');
+const { isAdmin, alertTeamJoin, scopeClause, guardTeamAccess } = require('../services/teamScope');
 const router = express.Router();
 
 const withSla = (row) => (row ? { ...row, sla: computeSla(row) } : row);
+const ALERT_TEAM_SELECT = `a.*, ag.team_id as team_id, t.name as team_name FROM alerts a ${alertTeamJoin()} LEFT JOIN teams t ON t.id = ag.team_id`;
 
 // ── DASHBOARD ──────────────────────────────────────────────────────────────
 router.get('/dashboard/stats', authenticate, async (req, res) => {
@@ -48,12 +50,14 @@ router.get('/alerts', authenticate, async (req, res) => {
   const { page=1, limit=25, severity, status, search } = req.query;
   const offset = (parseInt(page)-1)*parseInt(limit);
   const d = db(); let where=[], params=[];
-  if (severity) { where.push('severity = ?'); params.push(severity); }
-  if (status)   { where.push('status = ?');   params.push(status); }
-  if (search)   { where.push('(title LIKE ? OR asset LIKE ? OR username LIKE ?)'); params.push(`%${search}%`,`%${search}%`,`%${search}%`); }
+  if (severity) { where.push('a.severity = ?'); params.push(severity); }
+  if (status)   { where.push('a.status = ?');   params.push(status); }
+  if (search)   { where.push('(a.title LIKE ? OR a.asset LIKE ? OR a.username LIKE ?)'); params.push(`%${search}%`,`%${search}%`,`%${search}%`); }
+  const scope = scopeClause(req.user, 'ag.team_id');
+  if (scope.clause) { where.push(scope.clause); params.push(...scope.params); }
   const wc = where.length ? 'WHERE '+where.join(' AND ') : '';
-  const total = (await d.prepare(`SELECT COUNT(*) as cnt FROM alerts ${wc}`).get(...params))?.cnt || 0;
-  const alerts = await d.prepare(`SELECT * FROM alerts ${wc} ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(...params, parseInt(limit), offset);
+  const total = (await d.prepare(`SELECT COUNT(*) as cnt FROM alerts a ${alertTeamJoin()} ${wc}`).get(...params))?.cnt || 0;
+  const alerts = await d.prepare(`SELECT ${ALERT_TEAM_SELECT} ${wc} ORDER BY a.created_at DESC LIMIT ? OFFSET ?`).all(...params, parseInt(limit), offset);
   res.json({ alerts: alerts.map(withSla), total, page:parseInt(page), pages:Math.ceil(total/parseInt(limit)) });
 });
 
@@ -70,14 +74,20 @@ router.get('/alerts/stats', authenticate, async (req, res) => {
 });
 
 router.get('/alerts/:id', authenticate, async (req, res) => {
-  const alert = await db().prepare('SELECT * FROM alerts WHERE id = ?').get(req.params.id);
+  const alert = await db().prepare(`SELECT ${ALERT_TEAM_SELECT} WHERE a.id = ?`).get(req.params.id);
   if (!alert) return res.status(404).json({ error: 'Not found' });
+  if (!guardTeamAccess(res, req.user, alert.team_id)) return;
   res.json(withSla(alert));
 });
 
 router.patch('/alerts/:id', authenticate, authorize(ROLE_T1, ROLE_T2, ROLE_ADMIN), async (req, res) => {
+  const d = db();
+  const existing = await d.prepare(`SELECT a.id, ag.team_id as team_id FROM alerts a ${alertTeamJoin()} WHERE a.id = ?`).get(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Not found' });
+  if (!guardTeamAccess(res, req.user, existing.team_id)) return;
+
   const { status, analyst_id, risk_score } = req.body;
-  const d = db(); const fields=[], params=[];
+  const fields=[], params=[];
   if (status) {
     fields.push('status = ?'); params.push(status);
     // Set once, the first time status moves off "New" — later status changes don't touch it.
@@ -91,7 +101,7 @@ router.patch('/alerts/:id', authenticate, authorize(ROLE_T1, ROLE_T2, ROLE_ADMIN
   params.push(req.params.id);
   await d.prepare(`UPDATE alerts SET ${fields.join(', ')} WHERE id = ?`).run(...params);
   if (status) await logAction(req.user.username, 'alert_status_changed', 'alert', req.params.id, status, req.ip);
-  res.json(withSla(await d.prepare('SELECT * FROM alerts WHERE id = ?').get(req.params.id)));
+  res.json(withSla(await d.prepare(`SELECT ${ALERT_TEAM_SELECT} WHERE a.id = ?`).get(req.params.id)));
 });
 
 // ── IOCs ───────────────────────────────────────────────────────────────────
@@ -222,14 +232,17 @@ router.get('/incidents', authenticate, async (req, res) => {
   if (status) { where.push('i.status = ?'); params.push(status); }
   if (severity) { where.push('i.severity = ?'); params.push(severity); }
   if (search) { where.push('(i.title LIKE ? OR i.description LIKE ?)'); params.push(`%${search}%`, `%${search}%`); }
+  const scope = scopeClause(req.user, 'i.team_id');
+  if (scope.clause) { where.push(scope.clause); params.push(...scope.params); }
   const wc = where.length ? 'WHERE ' + where.join(' AND ') : '';
   const total = (await d.prepare(`SELECT COUNT(*) as cnt FROM incidents i ${wc}`).get(...params))?.cnt || 0;
   const incidents = await d.prepare(`
     SELECT
-      i.*,
+      i.*, t.name as team_name,
       (SELECT COUNT(*) FROM incident_alerts ia WHERE ia.incident_id = i.id) as alerts_count,
       (SELECT COUNT(*) FROM incident_notes n WHERE n.incident_id = i.id) as notes_count
     FROM incidents i
+    LEFT JOIN teams t ON t.id = i.team_id
     ${wc}
     ORDER BY i.created_at DESC
     LIMIT ? OFFSET ?
@@ -238,12 +251,12 @@ router.get('/incidents', authenticate, async (req, res) => {
 });
 
 router.post('/incidents', authenticate, authorize(ROLE_T1, ROLE_T2, ROLE_ADMIN), async (req, res) => {
-  const { title, description, severity = 'Medium', priority = 3, owner, tags, alert_ids } = req.body || {};
+  const { title, description, severity = 'Medium', priority = 3, owner, tags, alert_ids, team_id } = req.body || {};
   if (!title) return res.status(400).json({ error: 'title required' });
   const id = uuidv4();
   const d = db();
-  await d.prepare('INSERT INTO incidents(id,title,description,severity,status,priority,owner,tags) VALUES(?,?,?,?,?,?,?,?)')
-    .run(id, title, description || null, severity, 'Open', priority, owner || req.user.username, JSON.stringify(tags || []));
+  await d.prepare('INSERT INTO incidents(id,title,description,severity,status,priority,owner,tags,team_id) VALUES(?,?,?,?,?,?,?,?,?)')
+    .run(id, title, description || null, severity, 'Open', priority, owner || req.user.username, JSON.stringify(tags || []), team_id !== undefined ? team_id : (req.user.team_id || null));
   const ids = Array.isArray(alert_ids) ? alert_ids : [];
   if (ids.length) {
     const linkSql = getDialect() === 'postgres'
@@ -252,30 +265,32 @@ router.post('/incidents', authenticate, authorize(ROLE_T1, ROLE_T2, ROLE_ADMIN),
     const link = d.prepare(linkSql);
     await d.transaction(async (rows) => { for (const aid of rows) await link.run(id, aid); })(ids);
   }
-  res.status(201).json(withSla(await d.prepare('SELECT * FROM incidents WHERE id = ?').get(id)));
+  res.status(201).json(withSla(await d.prepare('SELECT i.*, t.name as team_name FROM incidents i LEFT JOIN teams t ON t.id = i.team_id WHERE i.id = ?').get(id)));
 });
 
 router.post('/incidents/from-alert/:alertId', authenticate, authorize(ROLE_T1, ROLE_T2, ROLE_ADMIN), async (req, res) => {
   const d = db();
-  const alert = await d.prepare('SELECT * FROM alerts WHERE id = ?').get(req.params.alertId);
+  const alert = await d.prepare(`SELECT a.*, ag.team_id as team_id FROM alerts a ${alertTeamJoin()} WHERE a.id = ?`).get(req.params.alertId);
   if (!alert) return res.status(404).json({ error: 'Alert not found' });
+  if (!guardTeamAccess(res, req.user, alert.team_id)) return;
   const id = uuidv4();
   const title = `Incident: ${alert.title}`;
-  await d.prepare('INSERT INTO incidents(id,title,description,severity,status,priority,owner,tags) VALUES(?,?,?,?,?,?,?,?)')
-    .run(id, title, alert.description || null, alert.severity || 'Medium', 'Open', 2, req.user.username, JSON.stringify(['from-alert']));
+  await d.prepare('INSERT INTO incidents(id,title,description,severity,status,priority,owner,tags,team_id) VALUES(?,?,?,?,?,?,?,?,?)')
+    .run(id, title, alert.description || null, alert.severity || 'Medium', 'Open', 2, req.user.username, JSON.stringify(['from-alert']), alert.team_id || req.user.team_id || null);
   const linkSql = getDialect() === 'postgres'
     ? 'INSERT INTO incident_alerts(incident_id,alert_id) VALUES(?,?) ON CONFLICT DO NOTHING'
     : 'INSERT OR IGNORE INTO incident_alerts(incident_id,alert_id) VALUES(?,?)';
   await d.prepare(linkSql).run(id, alert.id);
   await d.prepare('INSERT INTO incident_notes(id,incident_id,author,note) VALUES(?,?,?,?)')
     .run(uuidv4(), id, req.user.username, `Created from alert ${alert.id.slice(0, 8)} (${alert.severity})`);
-  res.status(201).json(withSla(await d.prepare('SELECT * FROM incidents WHERE id = ?').get(id)));
+  res.status(201).json(withSla(await d.prepare('SELECT i.*, t.name as team_name FROM incidents i LEFT JOIN teams t ON t.id = i.team_id WHERE i.id = ?').get(id)));
 });
 
 router.get('/incidents/:id', authenticate, async (req, res) => {
   const d = db();
-  const incident = await d.prepare('SELECT * FROM incidents WHERE id = ?').get(req.params.id);
+  const incident = await d.prepare('SELECT i.*, t.name as team_name FROM incidents i LEFT JOIN teams t ON t.id = i.team_id WHERE i.id = ?').get(req.params.id);
   if (!incident) return res.status(404).json({ error: 'Not found' });
+  if (!guardTeamAccess(res, req.user, incident.team_id)) return;
   const alerts = await d.prepare(`
     SELECT a.*
     FROM incident_alerts ia
@@ -289,8 +304,12 @@ router.get('/incidents/:id', authenticate, async (req, res) => {
 });
 
 router.patch('/incidents/:id', authenticate, authorize(ROLE_T1, ROLE_T2, ROLE_ADMIN), async (req, res) => {
-  const { title, description, severity, status, priority, owner, tags } = req.body || {};
   const d = db();
+  const existing = await d.prepare('SELECT id, team_id FROM incidents WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Not found' });
+  if (!guardTeamAccess(res, req.user, existing.team_id)) return;
+
+  const { title, description, severity, status, priority, owner, tags, team_id } = req.body || {};
   const fields = [];
   const params = [];
   if (title !== undefined) { fields.push('title = ?'); params.push(title); }
@@ -305,13 +324,16 @@ router.patch('/incidents/:id', authenticate, authorize(ROLE_T1, ROLE_T2, ROLE_AD
   if (priority !== undefined) { fields.push('priority = ?'); params.push(priority); }
   if (owner !== undefined) { fields.push('owner = ?'); params.push(owner); }
   if (tags !== undefined) { fields.push('tags = ?'); params.push(JSON.stringify(tags || [])); }
+  // Reassigning an item to a different team's queue is an admin-only action; non-admins'
+  // attempts to change it are silently ignored rather than hard-failing the whole request.
+  if (team_id !== undefined && isAdmin(req.user)) { fields.push('team_id = ?'); params.push(team_id); }
   fields.push(`updated_at = ${sqlNow()}`);
   if (status === 'Closed') fields.push(`closed_at = ${sqlNow()}`);
   if (status && status !== 'Closed') fields.push('closed_at = NULL');
   params.push(req.params.id);
   await d.prepare(`UPDATE incidents SET ${fields.join(', ')} WHERE id = ?`).run(...params);
   if (status) await logAction(req.user.username, 'incident_status_changed', 'incident', req.params.id, status, req.ip);
-  res.json(withSla(await d.prepare('SELECT * FROM incidents WHERE id = ?').get(req.params.id)));
+  res.json(withSla(await d.prepare('SELECT i.*, t.name as team_name FROM incidents i LEFT JOIN teams t ON t.id = i.team_id WHERE i.id = ?').get(req.params.id)));
 });
 
 router.post('/incidents/:id/notes', authenticate, authorize(ROLE_T1, ROLE_T2, ROLE_ADMIN), async (req, res) => {
