@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { alertsApi, incidentsApi, eventsApi, soarApi } from '../../services/api';
+import { alertsApi, incidentsApi, eventsApi, soarApi, teamsApi } from '../../services/api';
 import { useAuth } from '../Layout/Auth';
 
 const SEV_BADGE = { Critical: 'badge-red', High: 'badge-orange', Medium: 'badge-blue', Low: 'badge-green', Info: 'badge-gray' };
@@ -66,10 +66,12 @@ function sortQueue(items) {
 export default function TriageCenter({ liveAlerts }) {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const canRunPlaybooks = user?.role === 'admin' || user?.role === 't2_analyst';
+  const isAdmin = user?.role === 'admin';
+  const canRunPlaybooks = isAdmin || user?.role === 't2_analyst';
 
   const [alerts, setAlerts] = useState([]);
   const [incidents, setIncidents] = useState([]);
+  const [teams, setTeams] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({ severity: '', kind: '', search: '' });
   const [selected, setSelected] = useState(null); // { kind, id }
@@ -93,6 +95,7 @@ export default function TriageCenter({ liveAlerts }) {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { soarApi.playbooks().then(r => setPlaybooks((r.data.playbooks || []).filter(p => p.status === 'Active'))).catch(() => {}); }, []);
+  useEffect(() => { if (isAdmin) teamsApi.list().then(r => setTeams(r.data.teams || [])).catch(() => {}); }, [isAdmin]);
 
   const queue = useMemo(() => {
     const base = [
@@ -169,6 +172,16 @@ export default function TriageCenter({ liveAlerts }) {
     } finally { setBusy(false); }
   }
 
+  async function updateIncidentTeam(id, teamId) {
+    setBusy(true);
+    try {
+      await incidentsApi.update(id, { team_id: teamId || null });
+      const res = await incidentsApi.get(id);
+      setIncidentDetail(res.data);
+      await load();
+    } finally { setBusy(false); }
+  }
+
   async function createIncidentFromAlert(alertId) {
     setBusy(true);
     try {
@@ -235,7 +248,7 @@ export default function TriageCenter({ liveAlerts }) {
               <div style={{ padding: 20, color: 'var(--text3)' }}>Nothing open — queue is clear. 🎉</div>
             ) : (
               <table>
-                <thead><tr><th></th><th>Sev</th><th>Title</th><th>Asset / Owner</th><th>Score</th><th>Status</th><th>SLA</th><th>Age</th></tr></thead>
+                <thead><tr><th></th><th>Sev</th><th>Title</th><th>Asset / Owner</th><th>Team</th><th>Score</th><th>Status</th><th>SLA</th><th>Age</th></tr></thead>
                 <tbody>
                   {queue.map((it, i) => {
                     const isSel = selected?.kind === it.kind && selected?.id === it.id;
@@ -246,6 +259,7 @@ export default function TriageCenter({ liveAlerts }) {
                         <td><span className={`badge ${SEV_BADGE[it.severity] || 'badge-gray'}`}>{it.severity}</span></td>
                         <td style={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.title}</td>
                         <td style={{ fontFamily: 'monospace', fontSize: 11 }}>{it.subtitle}</td>
+                        <td style={{ fontSize: 11, color: 'var(--text2)' }}>{it.raw.team_name || '—'}</td>
                         <td style={{ fontSize: 11 }}>{it.score}</td>
                         <td><span className="badge badge-orange">{it.status}</span></td>
                         <td>{breached ? <span className="badge badge-red">⚠ Breach</span> : <span style={{ fontSize: 10, color: 'var(--text3)' }}>OK</span>}</td>
@@ -281,8 +295,19 @@ export default function TriageCenter({ liveAlerts }) {
                     <div><span style={{ color: 'var(--text3)' }}>Owner</span><div>{detailRaw.owner || 'Unassigned'}</div></div>
                   </>
                 )}
+                <div><span style={{ color: 'var(--text3)' }}>Team</span><div>{detailRaw.team_name || 'Unassigned'}</div></div>
                 <div style={{ gridColumn: '1 / -1' }}><span style={{ color: 'var(--text3)' }}>Created</span><div>{detailRaw.created_at ? new Date(detailRaw.created_at).toLocaleString() : '—'}</div></div>
               </div>
+
+              {detailKind === 'incident' && isAdmin && (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 6 }}>Reassign Team</div>
+                  <select value={detailRaw.team_id || ''} disabled={busy} onChange={e => updateIncidentTeam(detailRaw.id, e.target.value)} style={{ width: '100%' }}>
+                    <option value="">Unassigned</option>
+                    {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                </div>
+              )}
 
               {detailRaw.sla && (
                 <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid rgba(30,58,110,.3)' }}>
