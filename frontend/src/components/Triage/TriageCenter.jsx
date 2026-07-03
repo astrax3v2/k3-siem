@@ -25,9 +25,35 @@ function toQueueItem(kind, row) {
   // live feed already works around) — fall back to "now" rather than showing blank age.
   const createdAt = row.created_at || new Date().toISOString();
   if (kind === 'alert') {
-    return { kind, id: row.id, severity: row.severity, title: row.title, subtitle: row.asset || '—', status: row.status, score: row.risk_score ?? 0, created_at: createdAt, raw: row };
+    return { kind, id: row.id, severity: row.severity, title: row.title, subtitle: row.asset || '—', status: row.status, score: row.risk_score ?? 0, created_at: createdAt, sla: row.sla, raw: row };
   }
-  return { kind, id: row.id, severity: row.severity, title: row.title, subtitle: row.owner ? `Owner: ${row.owner}` : 'Unassigned', status: row.status, score: (5 - (row.priority || 3)) * 20, created_at: createdAt, raw: row };
+  return { kind, id: row.id, severity: row.severity, title: row.title, subtitle: row.owner ? `Owner: ${row.owner}` : 'Unassigned', status: row.status, score: (5 - (row.priority || 3)) * 20, created_at: createdAt, sla: row.sla, raw: row };
+}
+
+function isBreached(sla) {
+  return !!sla && (sla.ack_breached || sla.resolve_breached);
+}
+
+function formatDuration(minutes) {
+  if (minutes == null) return '—';
+  if (minutes < 60) return `${Math.round(minutes)}m`;
+  const hours = minutes / 60;
+  if (hours < 48) return `${hours.toFixed(1)}h`;
+  return `${(hours / 24).toFixed(1)}d`;
+}
+
+function SlaRow({ label, elapsedMinutes, targetMinutes, done, breached }) {
+  const color = breached ? '#fc8181' : done ? '#68d391' : 'var(--text2)';
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', fontSize: 12 }}>
+      <span style={{ color: 'var(--text3)' }}>{label}</span>
+      <span style={{ color, fontWeight: 600 }}>
+        {formatDuration(elapsedMinutes)} / {formatDuration(targetMinutes)} target
+        {breached && ' ⚠ Breached'}
+        {!breached && done && ' ✓'}
+      </span>
+    </div>
+  );
 }
 
 function sortQueue(items) {
@@ -122,6 +148,7 @@ export default function TriageCenter({ liveAlerts }) {
     openAlerts: alerts.filter(a => a.status !== 'Closed').length,
     openIncidents: incidents.filter(i => i.status !== 'Closed').length,
     critical: queue.filter(it => it.severity === 'Critical').length,
+    slaBreaches: queue.filter(it => isBreached(it.sla)).length,
   }), [alerts, incidents, queue]);
 
   async function updateAlertStatus(id, status) {
@@ -166,7 +193,7 @@ export default function TriageCenter({ liveAlerts }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, height: 'calc(100vh - 32px)' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
         <div className="card" style={{ padding: '10px 14px' }}>
           <div style={{ fontSize: 11, color: 'var(--text2)' }}>Open Alerts</div>
           <div style={{ fontSize: 24, fontWeight: 700, color: '#f6ad55' }}>{counts.openAlerts}</div>
@@ -178,6 +205,10 @@ export default function TriageCenter({ liveAlerts }) {
         <div className="card" style={{ padding: '10px 14px' }}>
           <div style={{ fontSize: 11, color: 'var(--text2)' }}>Critical in Queue</div>
           <div style={{ fontSize: 24, fontWeight: 700, color: '#fc8181' }}>{counts.critical}</div>
+        </div>
+        <div className="card" style={{ padding: '10px 14px' }}>
+          <div style={{ fontSize: 11, color: 'var(--text2)' }}>SLA Breaches</div>
+          <div style={{ fontSize: 24, fontWeight: 700, color: counts.slaBreaches > 0 ? '#fc8181' : '#68d391' }}>{counts.slaBreaches}</div>
         </div>
       </div>
 
@@ -204,10 +235,11 @@ export default function TriageCenter({ liveAlerts }) {
               <div style={{ padding: 20, color: 'var(--text3)' }}>Nothing open — queue is clear. 🎉</div>
             ) : (
               <table>
-                <thead><tr><th></th><th>Sev</th><th>Title</th><th>Asset / Owner</th><th>Score</th><th>Status</th><th>Age</th></tr></thead>
+                <thead><tr><th></th><th>Sev</th><th>Title</th><th>Asset / Owner</th><th>Score</th><th>Status</th><th>SLA</th><th>Age</th></tr></thead>
                 <tbody>
                   {queue.map((it, i) => {
                     const isSel = selected?.kind === it.kind && selected?.id === it.id;
+                    const breached = isBreached(it.sla);
                     return (
                       <tr key={`${it.kind}:${it.id}:${i}`} onClick={() => setSelected({ kind: it.kind, id: it.id })} style={{ cursor: 'pointer', background: isSel ? 'rgba(245,166,35,.08)' : '' }}>
                         <td style={{ fontSize: 13 }}>{it.kind === 'alert' ? '🚨' : '🧯'}</td>
@@ -216,6 +248,7 @@ export default function TriageCenter({ liveAlerts }) {
                         <td style={{ fontFamily: 'monospace', fontSize: 11 }}>{it.subtitle}</td>
                         <td style={{ fontSize: 11 }}>{it.score}</td>
                         <td><span className="badge badge-orange">{it.status}</span></td>
+                        <td>{breached ? <span className="badge badge-red">⚠ Breach</span> : <span style={{ fontSize: 10, color: 'var(--text3)' }}>OK</span>}</td>
                         <td style={{ fontSize: 10, color: 'var(--text3)', whiteSpace: 'nowrap' }}>{it.created_at ? new Date(it.created_at).toLocaleString() : '—'}</td>
                       </tr>
                     );
@@ -250,6 +283,14 @@ export default function TriageCenter({ liveAlerts }) {
                 )}
                 <div style={{ gridColumn: '1 / -1' }}><span style={{ color: 'var(--text3)' }}>Created</span><div>{detailRaw.created_at ? new Date(detailRaw.created_at).toLocaleString() : '—'}</div></div>
               </div>
+
+              {detailRaw.sla && (
+                <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid rgba(30,58,110,.3)' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 2 }}>SLA</div>
+                  <SlaRow label="Time to Acknowledge" elapsedMinutes={detailRaw.sla.ack_elapsed_minutes} targetMinutes={detailRaw.sla.ack_target_minutes} done={detailRaw.sla.ack_done} breached={detailRaw.sla.ack_breached} />
+                  <SlaRow label={detailKind === 'alert' ? 'Time to Close' : 'Time to Contain'} elapsedMinutes={detailRaw.sla.resolve_elapsed_minutes} targetMinutes={detailRaw.sla.resolve_target_minutes} done={detailRaw.sla.resolve_done} breached={detailRaw.sla.resolve_breached} />
+                </div>
+              )}
 
               {detailKind === 'incident' && incidentDetail?.process_tree?.length > 0 && (
                 <button className="btn btn-primary btn-sm" style={{ width: '100%', marginTop: 10 }} onClick={() => navigate(`/investigation/${detailRaw.id}`)}>

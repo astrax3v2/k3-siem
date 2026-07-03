@@ -607,6 +607,16 @@ const MIGRATIONS = [
     name: '0012_alerts_rule_id_index',
     sql: () => `CREATE INDEX IF NOT EXISTS idx_alerts_rule_id ON alerts(rule_id)`,
   },
+  {
+    // Time-to-acknowledge SLA tracking: set once, the first time status moves away from the
+    // initial "unworked" state (New for alerts, Open for incidents). See services/slaPolicy.js.
+    name: '0013_alerts_acknowledged_at',
+    sql: () => `ALTER TABLE alerts ADD COLUMN acknowledged_at TEXT`,
+  },
+  {
+    name: '0014_incidents_acknowledged_at',
+    sql: () => `ALTER TABLE incidents ADD COLUMN acknowledged_at TEXT`,
+  },
 ];
 
 async function runMigrations(d) {

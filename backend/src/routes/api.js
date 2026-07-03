@@ -5,7 +5,10 @@ const { db, getDialect, sqlNow, sqlNowMinus, sqlDate } = require('../models/db')
 const { authenticate, authorize, ROLE_ADMIN, ROLE_T1, ROLE_T2 } = require('../middleware/auth');
 const { runStep } = require('../services/connectors');
 const { logAction } = require('../services/audit');
+const { computeSla } = require('../services/slaPolicy');
 const router = express.Router();
+
+const withSla = (row) => (row ? { ...row, sla: computeSla(row) } : row);
 
 // ── DASHBOARD ──────────────────────────────────────────────────────────────
 router.get('/dashboard/stats', authenticate, async (req, res) => {
@@ -51,7 +54,7 @@ router.get('/alerts', authenticate, async (req, res) => {
   const wc = where.length ? 'WHERE '+where.join(' AND ') : '';
   const total = (await d.prepare(`SELECT COUNT(*) as cnt FROM alerts ${wc}`).get(...params))?.cnt || 0;
   const alerts = await d.prepare(`SELECT * FROM alerts ${wc} ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(...params, parseInt(limit), offset);
-  res.json({ alerts, total, page:parseInt(page), pages:Math.ceil(total/parseInt(limit)) });
+  res.json({ alerts: alerts.map(withSla), total, page:parseInt(page), pages:Math.ceil(total/parseInt(limit)) });
 });
 
 router.get('/alerts/stats', authenticate, async (req, res) => {
@@ -69,13 +72,18 @@ router.get('/alerts/stats', authenticate, async (req, res) => {
 router.get('/alerts/:id', authenticate, async (req, res) => {
   const alert = await db().prepare('SELECT * FROM alerts WHERE id = ?').get(req.params.id);
   if (!alert) return res.status(404).json({ error: 'Not found' });
-  res.json(alert);
+  res.json(withSla(alert));
 });
 
 router.patch('/alerts/:id', authenticate, authorize(ROLE_T1, ROLE_T2, ROLE_ADMIN), async (req, res) => {
   const { status, analyst_id, risk_score } = req.body;
   const d = db(); const fields=[], params=[];
-  if (status)     { fields.push('status = ?');     params.push(status); }
+  if (status) {
+    fields.push('status = ?'); params.push(status);
+    // Set once, the first time status moves off "New" — later status changes don't touch it.
+    fields.push(`acknowledged_at = COALESCE(acknowledged_at, CASE WHEN ? <> 'New' THEN ${sqlNow()} ELSE NULL END)`);
+    params.push(status);
+  }
   if (analyst_id) { fields.push('analyst_id = ?'); params.push(analyst_id); }
   if (risk_score !== undefined) { fields.push('risk_score = ?'); params.push(risk_score); }
   fields.push(`updated_at = ${sqlNow()}`);
@@ -83,7 +91,7 @@ router.patch('/alerts/:id', authenticate, authorize(ROLE_T1, ROLE_T2, ROLE_ADMIN
   params.push(req.params.id);
   await d.prepare(`UPDATE alerts SET ${fields.join(', ')} WHERE id = ?`).run(...params);
   if (status) await logAction(req.user.username, 'alert_status_changed', 'alert', req.params.id, status, req.ip);
-  res.json(await d.prepare('SELECT * FROM alerts WHERE id = ?').get(req.params.id));
+  res.json(withSla(await d.prepare('SELECT * FROM alerts WHERE id = ?').get(req.params.id)));
 });
 
 // ── IOCs ───────────────────────────────────────────────────────────────────
@@ -226,7 +234,7 @@ router.get('/incidents', authenticate, async (req, res) => {
     ORDER BY i.created_at DESC
     LIMIT ? OFFSET ?
   `).all(...params, parseInt(limit), offset);
-  res.json({ incidents, total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) });
+  res.json({ incidents: incidents.map(withSla), total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) });
 });
 
 router.post('/incidents', authenticate, authorize(ROLE_T1, ROLE_T2, ROLE_ADMIN), async (req, res) => {
@@ -244,7 +252,7 @@ router.post('/incidents', authenticate, authorize(ROLE_T1, ROLE_T2, ROLE_ADMIN),
     const link = d.prepare(linkSql);
     await d.transaction(async (rows) => { for (const aid of rows) await link.run(id, aid); })(ids);
   }
-  res.status(201).json(await d.prepare('SELECT * FROM incidents WHERE id = ?').get(id));
+  res.status(201).json(withSla(await d.prepare('SELECT * FROM incidents WHERE id = ?').get(id)));
 });
 
 router.post('/incidents/from-alert/:alertId', authenticate, authorize(ROLE_T1, ROLE_T2, ROLE_ADMIN), async (req, res) => {
@@ -261,7 +269,7 @@ router.post('/incidents/from-alert/:alertId', authenticate, authorize(ROLE_T1, R
   await d.prepare(linkSql).run(id, alert.id);
   await d.prepare('INSERT INTO incident_notes(id,incident_id,author,note) VALUES(?,?,?,?)')
     .run(uuidv4(), id, req.user.username, `Created from alert ${alert.id.slice(0, 8)} (${alert.severity})`);
-  res.status(201).json(await d.prepare('SELECT * FROM incidents WHERE id = ?').get(id));
+  res.status(201).json(withSla(await d.prepare('SELECT * FROM incidents WHERE id = ?').get(id)));
 });
 
 router.get('/incidents/:id', authenticate, async (req, res) => {
@@ -277,7 +285,7 @@ router.get('/incidents/:id', authenticate, async (req, res) => {
   `).all(req.params.id);
   const notes = await d.prepare('SELECT * FROM incident_notes WHERE incident_id = ? ORDER BY created_at DESC').all(req.params.id);
   const processTree = await d.prepare('SELECT * FROM process_nodes WHERE incident_id = ? ORDER BY sequence').all(req.params.id);
-  res.json({ incident, alerts, notes, process_tree: processTree });
+  res.json({ incident: withSla(incident), alerts, notes, process_tree: processTree });
 });
 
 router.patch('/incidents/:id', authenticate, authorize(ROLE_T1, ROLE_T2, ROLE_ADMIN), async (req, res) => {
@@ -288,7 +296,12 @@ router.patch('/incidents/:id', authenticate, authorize(ROLE_T1, ROLE_T2, ROLE_AD
   if (title !== undefined) { fields.push('title = ?'); params.push(title); }
   if (description !== undefined) { fields.push('description = ?'); params.push(description); }
   if (severity !== undefined) { fields.push('severity = ?'); params.push(severity); }
-  if (status !== undefined) { fields.push('status = ?'); params.push(status); }
+  if (status !== undefined) {
+    fields.push('status = ?'); params.push(status);
+    // Set once, the first time status moves off "Open" — later status changes don't touch it.
+    fields.push(`acknowledged_at = COALESCE(acknowledged_at, CASE WHEN ? <> 'Open' THEN ${sqlNow()} ELSE NULL END)`);
+    params.push(status);
+  }
   if (priority !== undefined) { fields.push('priority = ?'); params.push(priority); }
   if (owner !== undefined) { fields.push('owner = ?'); params.push(owner); }
   if (tags !== undefined) { fields.push('tags = ?'); params.push(JSON.stringify(tags || [])); }
@@ -298,7 +311,7 @@ router.patch('/incidents/:id', authenticate, authorize(ROLE_T1, ROLE_T2, ROLE_AD
   params.push(req.params.id);
   await d.prepare(`UPDATE incidents SET ${fields.join(', ')} WHERE id = ?`).run(...params);
   if (status) await logAction(req.user.username, 'incident_status_changed', 'incident', req.params.id, status, req.ip);
-  res.json(await d.prepare('SELECT * FROM incidents WHERE id = ?').get(req.params.id));
+  res.json(withSla(await d.prepare('SELECT * FROM incidents WHERE id = ?').get(req.params.id)));
 });
 
 router.post('/incidents/:id/notes', authenticate, authorize(ROLE_T1, ROLE_T2, ROLE_ADMIN), async (req, res) => {
