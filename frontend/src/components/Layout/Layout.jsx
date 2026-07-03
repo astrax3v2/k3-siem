@@ -3,7 +3,8 @@ import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from './Auth';
 
 const NAV = [
-  { path: '/', icon: '🏠', label: 'Dashboard' },
+  { path: '/', icon: '🎯', label: 'Triage' },
+  { path: '/overview', icon: '🏠', label: 'Overview' },
   { path: '/dashboards', icon: '📊', label: 'Dashboard Library' },
   { path: '/alerts', icon: '🚨', label: 'Alert Manager' },
   { path: '/incidents', icon: '🧯', label: 'Incident Response' },

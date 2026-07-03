@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth, LoginPage } from './components/Layout/Auth';
 import Layout from './components/Layout/Layout';
 import Dashboard from './components/Dashboard/Dashboard';
+import TriageCenter from './components/Triage/TriageCenter';
 import AlertManager from './components/Alerts/AlertManager';
 import KQLEngine from './components/KQL/KQLEngine';
 import { EventExplorer, IncidentResponse, Correlation, ThreatIntel, UEBA, SOAR } from './components/Pages';
@@ -34,7 +35,8 @@ function ProtectedApp() {
   return (
     <Layout connected={connected} liveAlertCount={liveAlerts.length}>
       <Routes>
-        <Route path="/" element={<Dashboard liveEvents={liveEvents} liveAlerts={liveAlerts} />} />
+        <Route path="/" element={<TriageCenter liveAlerts={liveAlerts} />} />
+        <Route path="/overview" element={<Dashboard liveEvents={liveEvents} liveAlerts={liveAlerts} />} />
         <Route path="/alerts" element={<AlertManager liveAlerts={liveAlerts} />} />
         <Route path="/incidents" element={<IncidentResponse />} />
         <Route path="/events" element={<EventExplorer liveEvents={liveEvents} />} />
