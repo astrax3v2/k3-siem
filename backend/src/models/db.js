@@ -593,6 +593,20 @@ const MIGRATIONS = [
     name: '0010_dashboards_owner_index',
     sql: () => `CREATE INDEX IF NOT EXISTS idx_dashboards_owner ON dashboards(owner)`,
   },
+  {
+    // correlationEngine.js's per-rule query filters `event_id = ? AND timestamp >= ?` every
+    // 30s; without this, only the timestamp half of that predicate is indexed (idx_events_ts),
+    // so every enabled rule re-scans its whole time window row-by-row to check event_id.
+    name: '0011_events_eventid_timestamp_index',
+    sql: () => `CREATE INDEX IF NOT EXISTS idx_events_eventid_ts ON events(event_id, timestamp)`,
+  },
+  {
+    // correlationEngine.js's dedupe check filters `rule_id = ? AND created_at >= ?` per match;
+    // without this it falls back to the created_at index and scans every alert (from all
+    // sources, not just this rule) in the window.
+    name: '0012_alerts_rule_id_index',
+    sql: () => `CREATE INDEX IF NOT EXISTS idx_alerts_rule_id ON alerts(rule_id)`,
+  },
 ];
 
 async function runMigrations(d) {
