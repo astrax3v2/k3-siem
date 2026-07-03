@@ -86,7 +86,19 @@ wss.on('connection', (ws, req) => {
 
 async function start() {
   await initDb();
-  startIngestion(parseInt(process.env.LOG_INGEST_INTERVAL) || 3000);
+
+  // Synthetic event/alert generation exists for demos only — it writes fake rows into the
+  // same events/alerts tables real ingestion uses, so it must never run unannounced in a
+  // real deployment. Defaults on outside of NODE_ENV=production (so `npm run dev` keeps
+  // working out of the box); production requires an explicit opt-in.
+  const demoMode = process.env.DEMO_MODE != null ? process.env.DEMO_MODE === 'true' : !isProd;
+  if (demoMode) {
+    console.log('[Ingestion] DEMO_MODE is ON — synthetic events/alerts will be generated. Set DEMO_MODE=false to disable.');
+    startIngestion(parseInt(process.env.LOG_INGEST_INTERVAL) || 3000);
+  } else {
+    console.log('[Ingestion] DEMO_MODE is OFF — only real agent-ingested events will be stored.');
+  }
+
   startAgentMonitor();
   startCorrelationEngine();
   startUebaEngine();
