@@ -49,7 +49,7 @@ K3 SIEM is a full-stack **Security Information and Event Management** platform i
 |---------|-------------|
 | 🎯 **Unified Triage Queue** | Alerts and incidents merged into one severity/SLA-sorted queue as the default landing page |
 | 🕵️ **Agent-Based Collection** | Deploy Python agents on real endpoints (Windows/Linux/Network) to collect and forward logs |
-| ⚡ **Real-Time Streaming** | WebSocket-powered live event and alert feeds — zero polling |
+| ⚡ **Real-Time Streaming** | WebSocket-powered live event and alert feeds zero polling |
 | 🔍 **KQL Query Engine** | Kusto Query Language transpiled to SQL for threat hunting |
 | 🤖 **SOAR Automation** | Execute playbooks with step-by-step progress tracking |
 | 🧠 **UEBA Analytics** | ML-inspired user behavior analytics with anomaly scoring |
