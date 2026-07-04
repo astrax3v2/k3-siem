@@ -71,10 +71,10 @@ K3 SIEM is a full-stack **Security Information and Event Management** platform i
   </tr>
   <tr>
     <td width="50%"><strong>Incident Response</strong><br/><img src="docs/screenshots/incident-detail.png" alt="Incident Response detail panel" /></td>
-    <td width="50%"><strong>🌳 Process Tree — Attack Chain Investigation</strong><br/><img src="docs/screenshots/process-tree.png" alt="Process tree attack chain" /></td>
+    <td width="50%"><strong>🌳 Process Tree Attack Chain Investigation</strong><br/><img src="docs/screenshots/process-tree.png" alt="Process tree attack chain" /></td>
   </tr>
   <tr>
-    <td width="50%"><strong>Process Tree — Stage Detail Panel</strong><br/><img src="docs/screenshots/process-tree-detail.png" alt="Process tree node detail" /></td>
+    <td width="50%"><strong>Process Tree Stage Detail Panel</strong><br/><img src="docs/screenshots/process-tree-detail.png" alt="Process tree node detail" /></td>
     <td width="50%"><strong>Threat Intelligence</strong><br/><img src="docs/screenshots/threat-intel.png" alt="Threat Intelligence" /></td>
   </tr>
   <tr>
@@ -133,23 +133,23 @@ K3 SIEM is a full-stack **Security Information and Event Management** platform i
 - **Detail Panel** includes:
   - Incident metadata (severity, priority, status, owner)
   - Status progression buttons
-  - **Linked Alerts Table** — All associated security alerts
-  - **Notes Section** — Add timestamped investigation notes with author tracking
-- **🌳 Process Tree Link** — Incidents with a reconstructed attack chain show a "View Process
+  - **Linked Alerts Table** All associated security alerts
+  - **Notes Section** Add timestamped investigation notes with author tracking
+- **🌳 Process Tree Link** Incidents with a reconstructed attack chain show a "View Process
   Tree" button opening the full investigation view (see below)
 
 ### 🌳 Process Tree / Attack Chain Investigation
 A CrowdStrike Falcon-style process execution tree for tracing a compromise from initial entry
 to full compromise, reachable from any incident with a reconstructed attack chain.
-- **Incident Overview** — title, description, severity/status, host/user, plus rollup **Impact**,
+- **Incident Overview** title, description, severity/status, host/user, plus rollup **Impact**,
   **Remediation**, and **Lessons Learned** cards
-- **Process Execution Chain** — an indented parent→child tree of every process the attacker
+- **Process Execution Chain** an indented parent→child tree of every process the attacker
   spawned, color-coded by severity, malicious stages flagged, root labeled "🎯 Initial Entry
   Vector" and the terminal stage labeled "💀 Full Compromise"
-- **Per-Stage Detail Panel** — click any process to see PID/PPID, image path, command line,
+- **Per-Stage Detail Panel** click any process to see PID/PPID, image path, command line,
   host/user, SHA256, MITRE tactic/technique, timestamp, and:
-  - **🔍 First Detected By** — the detection engine/rule/analyst that caught this stage
-  - **🤖 Auto-Analysis** — a plain-language explanation of why the stage is suspicious
+  - **🔍 First Detected By** the detection engine/rule/analyst that caught this stage
+  - **🤖 Auto-Analysis** a plain-language explanation of why the stage is suspicious
   - **💥 Impact**, **🛠️ Remediation**, and **📘 Lessons Learned** for that specific stage
 
 ### 📋 Event Explorer
