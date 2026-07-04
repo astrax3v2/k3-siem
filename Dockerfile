@@ -20,5 +20,9 @@ WORKDIR /app
 COPY --from=backend-deps /app/backend/node_modules ./backend/node_modules
 COPY backend/ ./backend/
 COPY --from=frontend-build /app/frontend/build ./frontend/build
+RUN mkdir -p /app/backend/data && chown -R node:node /app
+USER node
 EXPOSE 3001
+HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=10 \
+  CMD node -e "require('http').get('http://localhost:3001/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
 CMD ["node","backend/src/index.js"]

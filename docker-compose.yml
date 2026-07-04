@@ -26,16 +26,31 @@ services:
       NODE_ENV: production
       DB_CLIENT: postgres
       DATABASE_URL: postgresql://k3:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/k3_siem
-      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env (see .env.example) — generate with: openssl rand -base64 48}
-      INGEST_API_KEY: ${INGEST_API_KEY:?Set INGEST_API_KEY in .env (see .env.example) — generate with: openssl rand -hex 32}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env (see .env.example) — generate one with `openssl rand -base64 48`}
+      INGEST_API_KEY: ${INGEST_API_KEY:?Set INGEST_API_KEY in .env (see .env.example) — generate one with `openssl rand -hex 32`}
       CORS_ORIGIN: ${CORS_ORIGIN:?Set CORS_ORIGIN in .env to your real frontend origin, e.g. https://siem.example.com}
       LOG_INGEST_INTERVAL: "5000"
+      # Synthetic event/alert generator — leave off (default) for a real deployment;
+      # only flip to "true" for a sales/demo instance. See .env.example.
+      DEMO_MODE: ${DEMO_MODE:-false}
       SIEM_PUBLIC_URL: ${SIEM_PUBLIC_URL:-}
       SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      TEAMS_WEBHOOK_URL: ${TEAMS_WEBHOOK_URL:-}
       JIRA_BASE_URL: ${JIRA_BASE_URL:-}
       JIRA_EMAIL: ${JIRA_EMAIL:-}
       JIRA_API_TOKEN: ${JIRA_API_TOKEN:-}
       JIRA_PROJECT_KEY: ${JIRA_PROJECT_KEY:-}
+      SERVICENOW_INSTANCE: ${SERVICENOW_INSTANCE:-}
+      SERVICENOW_USER: ${SERVICENOW_USER:-}
+      SERVICENOW_PASS: ${SERVICENOW_PASS:-}
+      MISP_BASE_URL: ${MISP_BASE_URL:-}
+      MISP_API_KEY: ${MISP_API_KEY:-}
+      PANOS_HOST: ${PANOS_HOST:-}
+      PANOS_API_KEY: ${PANOS_API_KEY:-}
+      PANOS_BLOCK_GROUP: ${PANOS_BLOCK_GROUP:-K3-Blocked-IPs}
+      CROWDSTRIKE_BASE_URL: ${CROWDSTRIKE_BASE_URL:-}
+      CROWDSTRIKE_CLIENT_ID: ${CROWDSTRIKE_CLIENT_ID:-}
+      CROWDSTRIKE_CLIENT_SECRET: ${CROWDSTRIKE_CLIENT_SECRET:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-}
       SMTP_USER: ${SMTP_USER:-}
@@ -46,12 +61,19 @@ services:
       ABUSEIPDB_API_KEY: ${ABUSEIPDB_API_KEY:-}
       OTX_API_KEY: ${OTX_API_KEY:-}
       NVD_API_KEY: ${NVD_API_KEY:-}
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     restart: unless-stopped
 
   agent-windows:
     build: ./k3-agent
     depends_on:
-      - app
+      app:
+        condition: service_healthy
     environment:
       K3_SIEM_URL: http://app:3001
       K3_API_KEY: ${INGEST_API_KEY:?Set INGEST_API_KEY in .env}
@@ -60,12 +82,14 @@ services:
       K3_HOSTNAME: WS-PC-001
       K3_COLLECTION_INTERVAL: "8"
       K3_HEARTBEAT_INTERVAL: "30"
+      K3_VULN_SCAN: "true"
     restart: unless-stopped
 
   agent-linux:
     build: ./k3-agent
     depends_on:
-      - app
+      app:
+        condition: service_healthy
     environment:
       K3_SIEM_URL: http://app:3001
       K3_API_KEY: ${INGEST_API_KEY:?Set INGEST_API_KEY in .env}
@@ -74,12 +98,14 @@ services:
       K3_HOSTNAME: SRV-UBUNTU-01
       K3_COLLECTION_INTERVAL: "12"
       K3_HEARTBEAT_INTERVAL: "30"
+      K3_VULN_SCAN: "true"
     restart: unless-stopped
 
   agent-network:
     build: ./k3-agent
     depends_on:
-      - app
+      app:
+        condition: service_healthy
     environment:
       K3_SIEM_URL: http://app:3001
       K3_API_KEY: ${INGEST_API_KEY:?Set INGEST_API_KEY in .env}
@@ -88,6 +114,7 @@ services:
       K3_HOSTNAME: FW-PALOALTO-01
       K3_COLLECTION_INTERVAL: "15"
       K3_HEARTBEAT_INTERVAL: "30"
+      K3_VULN_SCAN: "true"
     restart: unless-stopped
 
 volumes:
