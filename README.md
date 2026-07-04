@@ -92,7 +92,7 @@ K3 SIEM is a full-stack **Security Information and Event Management** platform i
 ## ✨ Features
 
 ### 🎯 Triage Command Center (Landing Page)
-- **Default route (`/`)** — alerts and incidents merged into a single severity/SLA-sorted work queue
+- **Default route (`/`)** alerts and incidents merged into a single severity/SLA-sorted work queue
 - **4 Clickable KPI Tiles** Open Alerts, Open Incidents, Critical in Queue, SLA Breaches — click any tile to filter the queue in place; the SLA tile has its own togglable filter button too
 - **Kind / Severity / Search Filters** plus an "⚠ SLA Breaches" toggle
 - **Unified Detail Panel** for whichever row (alert or incident) is selected: metadata, SLA ack/resolve countdown with breach warnings, inline status updates, "Create Incident" from an alert, team reassignment (admin), and one-click SOAR playbook execution
