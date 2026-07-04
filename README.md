@@ -108,7 +108,8 @@ K3 SIEM is a full-stack **Security Information and Event Management** platform i
 - **🎯 Top MITRE Tactics** Ranked breakdown of MITRE ATT&CK tactics across all alerts click a tactic to filter Alert Manager to it
 - **📊 Alert Status Summary** New / Assigned / In Progress / Closed counts click a status to filter Alert Manager
 - **🔢 Platform Stats** IOC Hits, High-Risk Users, SOAR Runs, Events (24h) each links to its module
-- **🖥️ Agent Status** and **📦 Asset Overview** tiles link to Agent Manager and Asset Inventory
+- **🖥️ Agent Status** and
+-  **📦 Asset Overview** tiles link to Agent Manager and Asset Inventory
 
 ### 🚨 Alert Manager
 - **Severity Filters** Quick filter buttons: All, Critical, High, Medium, Low
