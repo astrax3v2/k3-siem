@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
 import { dashboardApi, alertsApi, eventsApi, agentsApi, assetsApi, vulnApi, intelApi } from '../../../services/api';
 
@@ -6,6 +7,23 @@ const SEV_COLORS = { Critical: '#fc8181', High: '#f6ad55', Medium: '#90cdf4', Lo
 const STATUS_COLORS = { New: '#fc8181', 'In Progress': '#f6ad55', Assigned: '#90cdf4', Closed: '#94a3b8' };
 
 export const SIZE_SPAN = { sm: 1, md: 2, lg: 3, full: 4 };
+
+// Best-effort destination for a KPI tile based on the dashboard-stats path it renders.
+const METRIC_LINKS = [
+  [/^alerts\.critical$/, '/alerts?severity=Critical'],
+  [/^alerts\./, '/alerts'],
+  [/^eventCount$/, '/events'],
+  [/^soarRuns$/, '/soar'],
+  [/^iocHits$/, '/intel'],
+  [/^uebaHigh$/, '/ueba'],
+  [/^agentStats\./, '/agents'],
+  [/^assetStats\./, '/inventory'],
+];
+
+function metricLink(path) {
+  const hit = METRIC_LINKS.find(([re]) => re.test(path || ''));
+  return hit ? hit[1] : null;
+}
 
 function getPath(obj, path) {
   return path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
@@ -17,9 +35,9 @@ function formatMetric(value) {
   return value;
 }
 
-function CardShell({ title, children }) {
+function CardShell({ title, children, onClick, navTitle }) {
   return (
-    <div className="card">
+    <div className="card" style={{ cursor: onClick ? 'pointer' : 'default' }} onClick={onClick} title={onClick ? (navTitle || 'Click to view details') : undefined}>
       <div className="card-title">{title}</div>
       {children}
     </div>
@@ -27,11 +45,13 @@ function CardShell({ title, children }) {
 }
 
 function KpiTile({ widget }) {
+  const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   useEffect(() => { dashboardApi.stats().then(r => setStats(r.data)).catch(() => {}); }, []);
   const value = stats ? getPath(stats, widget.config.metric) : null;
+  const link = widget.config.link || metricLink(widget.config.metric);
   return (
-    <div className="card" style={{ padding: '12px 14px' }}>
+    <div className="card" style={{ padding: '12px 14px', cursor: link ? 'pointer' : 'default' }} onClick={link ? () => navigate(link) : undefined} title={link ? 'Click to view details' : undefined}>
       <div style={{ fontSize: 11, color: 'var(--text2)' }}>{widget.title}</div>
       <div style={{ fontSize: 26, fontWeight: 700, color: widget.config.color || 'var(--gold)', lineHeight: 1.2, marginTop: 2 }}>
         {formatMetric(value)}{value != null && widget.config.suffix}
@@ -41,10 +61,11 @@ function KpiTile({ widget }) {
 }
 
 function AlertTrend({ widget }) {
+  const navigate = useNavigate();
   const [trend, setTrend] = useState([]);
   useEffect(() => { dashboardApi.stats().then(r => setTrend(r.data?.trend || [])).catch(() => {}); }, []);
   return (
-    <CardShell title={widget.title}>
+    <CardShell title={widget.title} onClick={() => navigate('/alerts')} navTitle="Click to view all alerts">
       <ResponsiveContainer width="100%" height={140}>
         <AreaChart data={trend} margin={{ top: 5, right: 5, bottom: 0, left: -30 }}>
           <defs>
@@ -64,6 +85,7 @@ function AlertTrend({ widget }) {
 }
 
 function SeverityBar({ widget }) {
+  const navigate = useNavigate();
   const [data, setData] = useState([]);
   useEffect(() => { alertsApi.stats().then(r => setData(r.data?.bySeverity || [])).catch(() => {}); }, []);
   return (
@@ -73,7 +95,7 @@ function SeverityBar({ widget }) {
           <XAxis dataKey="severity" tick={{ fontSize: 10, fill: '#64748b' }} />
           <YAxis tick={{ fontSize: 10, fill: '#64748b' }} />
           <Tooltip contentStyle={{ background: '#1a2235', border: '1px solid #1e3a6e', fontSize: 12 }} />
-          <Bar dataKey="cnt" radius={[3, 3, 0, 0]}>
+          <Bar dataKey="cnt" radius={[3, 3, 0, 0]} cursor="pointer" onClick={(d) => d?.severity && navigate(`/alerts?severity=${encodeURIComponent(d.severity)}`)}>
             {data.map((e, i) => <Cell key={i} fill={SEV_COLORS[e.severity] || '#94a3b8'} />)}
           </Bar>
         </BarChart>
@@ -83,6 +105,7 @@ function SeverityBar({ widget }) {
 }
 
 function MitreTactics({ widget }) {
+  const navigate = useNavigate();
   const [data, setData] = useState([]);
   useEffect(() => { alertsApi.stats().then(r => setData(r.data?.byTactic || [])).catch(() => {}); }, []);
   const max = data[0]?.cnt || 1;
@@ -90,7 +113,7 @@ function MitreTactics({ widget }) {
     <CardShell title={widget.title}>
       {data.length === 0 && <div style={{ color: 'var(--text3)', fontSize: 12 }}>No data</div>}
       {data.map((t, i) => (
-        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: 12 }}>
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: 12, cursor: 'pointer' }} onClick={() => navigate(`/alerts?tactic=${encodeURIComponent(t.mitre_tactic)}`)} title={`Click to view ${t.mitre_tactic} alerts`}>
           <span style={{ flex: 1, color: 'var(--text2)' }}>{t.mitre_tactic || 'Unknown'}</span>
           <div style={{ width: 60, height: 4, background: 'var(--bg4)', borderRadius: 2, overflow: 'hidden' }}>
             <div style={{ width: `${(t.cnt / max) * 100}%`, height: '100%', background: 'var(--navy3)' }} />
@@ -103,12 +126,13 @@ function MitreTactics({ widget }) {
 }
 
 function AlertStatus({ widget }) {
+  const navigate = useNavigate();
   const [data, setData] = useState([]);
   useEffect(() => { alertsApi.stats().then(r => setData(r.data?.byStatus || [])).catch(() => {}); }, []);
   return (
     <CardShell title={widget.title}>
       {data.map((s, i) => (
-        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid rgba(30,58,110,.3)', fontSize: 12 }}>
+        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid rgba(30,58,110,.3)', fontSize: 12, cursor: 'pointer' }} onClick={() => navigate(`/alerts?status=${encodeURIComponent(s.status)}`)} title={`Click to view ${s.status} alerts`}>
           <span style={{ color: 'var(--text2)' }}>{s.status}</span>
           <span style={{ color: STATUS_COLORS[s.status] || 'var(--text)', fontWeight: 600 }}>{s.cnt}</span>
         </div>
@@ -118,10 +142,11 @@ function AlertStatus({ widget }) {
 }
 
 function AgentStatus({ widget }) {
+  const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   useEffect(() => { agentsApi.stats().then(r => setStats(r.data)).catch(() => {}); }, []);
   return (
-    <CardShell title={widget.title}>
+    <CardShell title={widget.title} onClick={() => navigate('/agents')} navTitle="Click to view agents">
       <div style={{ display: 'flex', gap: 16 }}>
         {[
           { label: 'Total', value: stats?.total ?? 0, color: 'var(--gold)' },
@@ -142,10 +167,11 @@ function AgentStatus({ widget }) {
 }
 
 function AssetOverview({ widget }) {
+  const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   useEffect(() => { assetsApi.stats().then(r => setStats(r.data)).catch(() => {}); }, []);
   return (
-    <CardShell title={widget.title}>
+    <CardShell title={widget.title} onClick={() => navigate('/inventory')} navTitle="Click to view asset inventory">
       <div style={{ display: 'flex', gap: 16 }}>
         <div style={{ textAlign: 'center', flex: 1 }}>
           <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--gold)' }}>{stats?.total ?? 0}</div>
@@ -169,6 +195,7 @@ function AssetOverview({ widget }) {
 }
 
 function VulnSummary({ widget }) {
+  const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   useEffect(() => { vulnApi.stats().then(r => setStats(r.data)).catch(() => {}); }, []);
   const items = [
@@ -180,7 +207,7 @@ function VulnSummary({ widget }) {
     ['Affected Assets', stats?.affected_assets, 'var(--text)'],
   ];
   return (
-    <CardShell title={widget.title}>
+    <CardShell title={widget.title} onClick={() => navigate('/vulnerabilities')} navTitle="Click to view vulnerabilities">
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
         {items.map(([label, value, color]) => (
           <div key={label} style={{ textAlign: 'center', flex: 1, minWidth: 70 }}>
@@ -194,6 +221,7 @@ function VulnSummary({ widget }) {
 }
 
 function IocFeed({ widget }) {
+  const navigate = useNavigate();
   const [iocs, setIocs] = useState([]);
   useEffect(() => { intelApi.iocs({ limit: widget.config.limit || 10 }).then(r => setIocs(r.data?.iocs || [])).catch(() => {}); }, [widget.config.limit]);
   return (
@@ -203,7 +231,7 @@ function IocFeed({ widget }) {
           <thead><tr><th>Type</th><th>Value</th><th>Severity</th><th>Confidence</th><th>Source</th></tr></thead>
           <tbody>
             {iocs.map((ioc, i) => (
-              <tr key={i}>
+              <tr key={i} style={{ cursor: 'pointer' }} onClick={() => navigate('/intel')} title="Click to view threat intel">
                 <td style={{ fontSize: 11 }}>{ioc.type}</td>
                 <td style={{ fontFamily: 'monospace', fontSize: 11 }}>{ioc.value}</td>
                 <td><span className="badge badge-orange">{ioc.severity}</span></td>
@@ -219,6 +247,7 @@ function IocFeed({ widget }) {
 }
 
 function AlertsTable({ widget }) {
+  const navigate = useNavigate();
   const [alerts, setAlerts] = useState([]);
   useEffect(() => {
     const params = { limit: widget.config.limit || 10 };
@@ -233,7 +262,7 @@ function AlertsTable({ widget }) {
           <thead><tr><th>Severity</th><th>Title</th><th>Asset</th><th>MITRE</th><th>Status</th></tr></thead>
           <tbody>
             {alerts.map((a, i) => (
-              <tr key={i}>
+              <tr key={i} style={{ cursor: 'pointer' }} onClick={() => navigate(`/alerts?id=${encodeURIComponent(a.id)}`)} title="Click to view this alert">
                 <td><span className="badge badge-red">{a.severity}</span></td>
                 <td style={{ maxWidth: 220, color: 'var(--text)' }}>{a.title}</td>
                 <td style={{ fontFamily: 'monospace', fontSize: 11 }}>{a.asset}</td>
@@ -249,6 +278,7 @@ function AlertsTable({ widget }) {
 }
 
 function EventsTable({ widget }) {
+  const navigate = useNavigate();
   const [events, setEvents] = useState([]);
   useEffect(() => {
     const params = { limit: widget.config.limit || 10 };
@@ -264,7 +294,7 @@ function EventsTable({ widget }) {
           <thead><tr><th>Time</th><th>Source</th><th>Computer</th><th>Action</th><th>Sev</th></tr></thead>
           <tbody>
             {events.map((e, i) => (
-              <tr key={i}>
+              <tr key={i} style={{ cursor: 'pointer' }} onClick={() => navigate(`/events?search=${encodeURIComponent(e.computer || e.username || e.ip_address || '')}`)} title="Click to view related events">
                 <td style={{ fontSize: 10, color: 'var(--text3)', whiteSpace: 'nowrap' }}>{new Date(e.timestamp).toLocaleTimeString()}</td>
                 <td style={{ fontSize: 11, color: 'var(--text2)' }}>{e.source}</td>
                 <td style={{ fontFamily: 'monospace', fontSize: 11 }}>{e.computer}</td>
@@ -280,6 +310,7 @@ function EventsTable({ widget }) {
 }
 
 function LiveAlertFeed({ widget, liveAlerts }) {
+  const navigate = useNavigate();
   const items = (liveAlerts || []).slice(0, widget.config.limit || 5);
   return (
     <CardShell title={widget.title}>
@@ -288,7 +319,7 @@ function LiveAlertFeed({ widget, liveAlerts }) {
           <thead><tr><th>Severity</th><th>Title</th><th>Asset</th><th>MITRE</th><th>Time</th></tr></thead>
           <tbody>
             {items.map((a, i) => (
-              <tr key={i}>
+              <tr key={i} style={{ cursor: 'pointer' }} onClick={() => navigate(a.id ? `/alerts?id=${encodeURIComponent(a.id)}` : '/alerts')} title="Click to view this alert">
                 <td><span className="badge badge-red">{a.severity}</span></td>
                 <td style={{ maxWidth: 220, color: 'var(--text)' }}>{a.title}</td>
                 <td style={{ fontFamily: 'monospace', fontSize: 11 }}>{a.asset}</td>
@@ -305,6 +336,7 @@ function LiveAlertFeed({ widget, liveAlerts }) {
 }
 
 function LiveEventStream({ widget, liveEvents }) {
+  const navigate = useNavigate();
   const items = (liveEvents || []).slice(0, widget.config.limit || 10);
   return (
     <CardShell title={widget.title}>
@@ -313,7 +345,7 @@ function LiveEventStream({ widget, liveEvents }) {
           <thead><tr><th>Time</th><th>Source</th><th>Computer</th><th>Action</th><th>Sev</th></tr></thead>
           <tbody>
             {items.map((e, i) => (
-              <tr key={i}>
+              <tr key={i} style={{ cursor: 'pointer' }} onClick={() => navigate(`/events?search=${encodeURIComponent(e.computer || e.username || e.ip_address || '')}`)} title="Click to view related events">
                 <td style={{ fontSize: 10, color: 'var(--text3)', whiteSpace: 'nowrap' }}>{new Date(e.timestamp).toLocaleTimeString()}</td>
                 <td style={{ fontSize: 11, color: 'var(--text2)' }}>{e.source}</td>
                 <td style={{ fontFamily: 'monospace', fontSize: 11 }}>{e.computer}</td>
