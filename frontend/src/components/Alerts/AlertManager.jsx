@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { alertsApi, incidentsApi } from '../../services/api';
 
 const SEV = { Critical: 'badge-red', High: 'badge-orange', Medium: 'badge-blue', Low: 'badge-green' };
@@ -7,15 +7,33 @@ const STA = { New: 'badge-red', 'In Progress': 'badge-orange', Assigned: 'badge-
 
 export default function AlertManager({ liveAlerts }) {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [alerts, setAlerts] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState(null);
-  const [filters, setFilters] = useState({ severity: '', status: '', search: '' });
+  const [selected, setSelected] = useState(searchParams.get('id') || null);
+  const [filters, setFilters] = useState({
+    severity: searchParams.get('severity') || '',
+    status: searchParams.get('status') || '',
+    search: searchParams.get('search') || '',
+    mitre_tactic: searchParams.get('tactic') || '',
+  });
   const [updating, setUpdating] = useState(false);
   const [creatingIncident, setCreatingIncident] = useState(false);
+
+  // Keep the URL in sync so filtered/selected views from dashboards are shareable and bookmarkable.
+  useEffect(() => {
+    const next = {};
+    if (filters.severity) next.severity = filters.severity;
+    if (filters.status) next.status = filters.status;
+    if (filters.search) next.search = filters.search;
+    if (filters.mitre_tactic) next.tactic = filters.mitre_tactic;
+    if (selected) next.id = selected;
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters, selected]);
 
   const uniqueById = useCallback((items) => {
     const seen = new Set();
@@ -41,16 +59,22 @@ export default function AlertManager({ liveAlerts }) {
 
   useEffect(() => { load(); }, [load]);
 
-  // Prepend live alerts
+  // Prepend live alerts that match the active filters — otherwise a filtered view
+  // (e.g. severity=Critical from a dashboard link) gets polluted with unrelated live rows.
   useEffect(() => {
     if (liveAlerts.length > 0) {
+      const matchesFilters = (a) =>
+        (!filters.severity || a.severity === filters.severity) &&
+        (!filters.status || a.status === filters.status) &&
+        (!filters.mitre_tactic || a.mitre_tactic === filters.mitre_tactic) &&
+        (!filters.search || `${a.title || ''} ${a.asset || ''} ${a.username || ''}`.toLowerCase().includes(filters.search.toLowerCase()));
       setAlerts(prev => {
         const ids = new Set(prev.map(a => a.id));
-        const newOnes = uniqueById(liveAlerts).filter(a => !ids.has(a.id));
+        const newOnes = uniqueById(liveAlerts).filter(a => !ids.has(a.id) && matchesFilters(a));
         return uniqueById([...newOnes, ...prev]);
       });
     }
-  }, [liveAlerts, uniqueById]);
+  }, [liveAlerts, uniqueById, filters]);
 
   const updateAlert = async (id, data) => {
     setUpdating(true);
@@ -62,6 +86,22 @@ export default function AlertManager({ liveAlerts }) {
   };
 
   const detail = selected ? alerts.find(a => a.id === selected) : null;
+
+  // Deep links from dashboards/widgets pass ?id=<alert> — fetch it directly if it isn't on the current filtered page.
+  useEffect(() => {
+    if (!selected || loading || detail) return;
+    alertsApi.get(selected).then(res => {
+      setAlerts(prev => uniqueById([res.data, ...prev]));
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, loading, detail]);
+
+  const activeFilterChips = [
+    filters.severity && { key: 'severity', label: `Severity: ${filters.severity}` },
+    filters.status && { key: 'status', label: `Status: ${filters.status}` },
+    filters.mitre_tactic && { key: 'mitre_tactic', label: `Tactic: ${filters.mitre_tactic}` },
+    filters.search && { key: 'search', label: `Search: "${filters.search}"` },
+  ].filter(Boolean);
   const createIncidentFromAlert = async (alertId) => {
     if (!alertId) return;
     setCreatingIncident(true);
@@ -90,6 +130,18 @@ export default function AlertManager({ liveAlerts }) {
           <input placeholder="Search…" value={filters.search} onChange={e => { setFilters(f => ({ ...f, search: e.target.value })); setPage(1); }} style={{ width: 180, padding: '4px 10px', fontSize: 12 }} />
           <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text3)' }}>{total} alerts</span>
         </div>
+
+        {activeFilterChips.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Filtered from dashboard:</span>
+            {activeFilterChips.map(c => (
+              <span key={c.key} className="badge badge-blue" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer' }} onClick={() => { setFilters(f => ({ ...f, [c.key]: '' })); setPage(1); }}>
+                {c.label} ✕
+              </span>
+            ))}
+            <button className="btn btn-secondary btn-sm" onClick={() => { setFilters({ severity: '', status: '', search: '', mitre_tactic: '' }); setPage(1); }}>Clear all</button>
+          </div>
+        )}
 
         {/* Table */}
         <div className="card" style={{ flex: 1, overflow: 'auto', padding: 0 }}>

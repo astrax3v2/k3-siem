@@ -73,7 +73,7 @@ export default function TriageCenter({ liveAlerts }) {
   const [incidents, setIncidents] = useState([]);
   const [teams, setTeams] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({ severity: '', kind: '', search: '' });
+  const [filters, setFilters] = useState({ severity: '', kind: '', search: '', breachedOnly: false });
   const [selected, setSelected] = useState(null); // { kind, id }
   const [incidentDetail, setIncidentDetail] = useState(null);
   const [relatedEvents, setRelatedEvents] = useState([]);
@@ -109,6 +109,7 @@ export default function TriageCenter({ liveAlerts }) {
 
     if (filters.kind) merged = merged.filter(it => it.kind === filters.kind);
     if (filters.severity) merged = merged.filter(it => it.severity === filters.severity);
+    if (filters.breachedOnly) merged = merged.filter(it => isBreached(it.sla));
     if (filters.search) {
       const s = filters.search.toLowerCase();
       merged = merged.filter(it => (it.title || '').toLowerCase().includes(s) || (it.subtitle || '').toLowerCase().includes(s));
@@ -207,19 +208,39 @@ export default function TriageCenter({ liveAlerts }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, height: 'calc(100vh - 32px)' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
-        <div className="card" style={{ padding: '10px 14px' }}>
+        <div
+          className="card"
+          style={{ padding: '10px 14px', cursor: 'pointer', outline: filters.kind === 'alert' && !filters.breachedOnly ? '1px solid var(--gold)' : 'none' }}
+          onClick={() => setFilters(f => ({ ...f, kind: f.kind === 'alert' ? '' : 'alert', breachedOnly: false }))}
+          title="Click to filter queue to alerts"
+        >
           <div style={{ fontSize: 11, color: 'var(--text2)' }}>Open Alerts</div>
           <div style={{ fontSize: 24, fontWeight: 700, color: '#f6ad55' }}>{counts.openAlerts}</div>
         </div>
-        <div className="card" style={{ padding: '10px 14px' }}>
+        <div
+          className="card"
+          style={{ padding: '10px 14px', cursor: 'pointer', outline: filters.kind === 'incident' && !filters.breachedOnly ? '1px solid var(--gold)' : 'none' }}
+          onClick={() => setFilters(f => ({ ...f, kind: f.kind === 'incident' ? '' : 'incident', breachedOnly: false }))}
+          title="Click to filter queue to incidents"
+        >
           <div style={{ fontSize: 11, color: 'var(--text2)' }}>Open Incidents</div>
           <div style={{ fontSize: 24, fontWeight: 700, color: '#90cdf4' }}>{counts.openIncidents}</div>
         </div>
-        <div className="card" style={{ padding: '10px 14px' }}>
+        <div
+          className="card"
+          style={{ padding: '10px 14px', cursor: 'pointer', outline: filters.severity === 'Critical' && !filters.breachedOnly ? '1px solid var(--gold)' : 'none' }}
+          onClick={() => setFilters(f => ({ ...f, severity: f.severity === 'Critical' ? '' : 'Critical', breachedOnly: false }))}
+          title="Click to filter queue to Critical severity"
+        >
           <div style={{ fontSize: 11, color: 'var(--text2)' }}>Critical in Queue</div>
           <div style={{ fontSize: 24, fontWeight: 700, color: '#fc8181' }}>{counts.critical}</div>
         </div>
-        <div className="card" style={{ padding: '10px 14px' }}>
+        <div
+          className="card"
+          style={{ padding: '10px 14px', cursor: 'pointer', outline: filters.breachedOnly ? '1px solid var(--gold)' : 'none' }}
+          onClick={() => setFilters(f => ({ ...f, breachedOnly: !f.breachedOnly }))}
+          title="Click to filter queue to SLA breaches"
+        >
           <div style={{ fontSize: 11, color: 'var(--text2)' }}>SLA Breaches</div>
           <div style={{ fontSize: 24, fontWeight: 700, color: counts.slaBreaches > 0 ? '#fc8181' : '#68d391' }}>{counts.slaBreaches}</div>
         </div>
@@ -238,6 +259,9 @@ export default function TriageCenter({ liveAlerts }) {
                 {s || 'All Severity'}
               </button>
             ))}
+            <button className={`btn btn-sm ${filters.breachedOnly ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setFilters(f => ({ ...f, breachedOnly: !f.breachedOnly }))}>
+              ⚠ SLA Breaches
+            </button>
             <input placeholder="Search…" value={filters.search} onChange={e => setFilters(f => ({ ...f, search: e.target.value }))} style={{ width: 180, padding: '4px 10px', fontSize: 12 }} />
             <button className="btn btn-secondary btn-sm" onClick={load}>🔄 Refresh</button>
             <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text3)' }}>{queue.length} in queue</span>

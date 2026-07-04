@@ -47,11 +47,12 @@ router.get('/dashboard/stats', authenticate, async (req, res) => {
 
 // ── ALERTS ─────────────────────────────────────────────────────────────────
 router.get('/alerts', authenticate, async (req, res) => {
-  const { page=1, limit=25, severity, status, search } = req.query;
+  const { page=1, limit=25, severity, status, search, mitre_tactic } = req.query;
   const offset = (parseInt(page)-1)*parseInt(limit);
   const d = db(); let where=[], params=[];
   if (severity) { where.push('a.severity = ?'); params.push(severity); }
   if (status)   { where.push('a.status = ?');   params.push(status); }
+  if (mitre_tactic) { where.push('a.mitre_tactic = ?'); params.push(mitre_tactic); }
   if (search)   { where.push('(a.title LIKE ? OR a.asset LIKE ? OR a.username LIKE ?)'); params.push(`%${search}%`,`%${search}%`,`%${search}%`); }
   const scope = scopeClause(req.user, 'ag.team_id');
   if (scope.clause) { where.push(scope.clause); params.push(...scope.params); }

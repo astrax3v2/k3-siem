@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { eventsApi, correlationApi, intelApi, uebaApi, soarApi, incidentsApi } from '../services/api';
 import { useAuth } from './Layout/Auth';
 
@@ -7,12 +7,29 @@ const SEV = { Critical: 'badge-red', High: 'badge-orange', Medium: 'badge-blue',
 
 // ── Event Explorer ──────────────────────────────────────────────────────────
 export function EventExplorer({ liveEvents }) {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [events, setEvents] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({ severity: '', source: '', search: '', index: '' });
+  const [filters, setFilters] = useState({
+    severity: searchParams.get('severity') || '',
+    source: searchParams.get('source') || '',
+    search: searchParams.get('search') || '',
+    index: searchParams.get('index') || '',
+  });
+
+  // Keep the URL in sync so links from dashboard widgets (e.g. "view related events") are shareable.
+  useEffect(() => {
+    const next = {};
+    if (filters.severity) next.severity = filters.severity;
+    if (filters.source) next.source = filters.source;
+    if (filters.search) next.search = filters.search;
+    if (filters.index) next.index = filters.index;
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters]);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -535,18 +552,40 @@ export function SOAR() {
 export function IncidentResponse() {
   const location = useLocation();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [incidents, setIncidents] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({ status: '', severity: '', search: '' });
-  const [selectedId, setSelectedId] = useState(null);
+  const [filters, setFilters] = useState({
+    status: searchParams.get('status') || '',
+    severity: searchParams.get('severity') || '',
+    search: searchParams.get('search') || '',
+  });
+  const [selectedId, setSelectedId] = useState(searchParams.get('id') || null);
   const [detail, setDetail] = useState(null);
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [createForm, setCreateForm] = useState({ title: '', description: '', severity: 'High', priority: 2 });
+
+  // Keep the URL in sync so filtered/selected views from dashboards are shareable and bookmarkable.
+  useEffect(() => {
+    const next = {};
+    if (filters.status) next.status = filters.status;
+    if (filters.severity) next.severity = filters.severity;
+    if (filters.search) next.search = filters.search;
+    if (selectedId) next.id = selectedId;
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters, selectedId]);
+
+  const activeFilterChips = [
+    filters.severity && { key: 'severity', label: `Severity: ${filters.severity}` },
+    filters.status && { key: 'status', label: `Status: ${filters.status}` },
+    filters.search && { key: 'search', label: `Search: "${filters.search}"` },
+  ].filter(Boolean);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -625,6 +664,18 @@ export function IncidentResponse() {
           <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }} onClick={() => setShowCreate(s => !s)}>+ New Incident</button>
           <span style={{ fontSize: 11, color: 'var(--text3)' }}>{total} incidents</span>
         </div>
+
+        {activeFilterChips.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Filtered from dashboard:</span>
+            {activeFilterChips.map(c => (
+              <span key={c.key} className="badge badge-blue" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer' }} onClick={() => { setFilters(f => ({ ...f, [c.key]: '' })); setPage(1); }}>
+                {c.label} ✕
+              </span>
+            ))}
+            <button className="btn btn-secondary btn-sm" onClick={() => { setFilters({ status: '', severity: '', search: '' }); setPage(1); }}>Clear all</button>
+          </div>
+        )}
 
         {showCreate && (
           <div className="card">
