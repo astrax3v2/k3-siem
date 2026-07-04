@@ -41,7 +41,7 @@
 
 ## 🔭 Overview
 
-K3 SIEM is a full-stack **Security Information and Event Management** platform inspired by **Microsoft Sentinel** and **SentinelOne**. It provides real-time security monitoring, threat detection, incident response, and automated playbook execution — all from a unified dark-themed security operations interface. Analysts land on a unified **Triage Command Center**, and every chart, KPI tile, and table row across the dashboards is clickable straight through to the filtered alerts/incidents behind it.
+K3 SIEM is a full-stack **Security Information and Event Management** platform inspired by **Microsoft Sentinel** and **SentinelOne**. It provides real-time security monitoring, threat detection, incident response, and automated playbook execution all from a unified dark-themed security operations interface. Analysts land on a unified **Triage Command Center**, and every chart, KPI tile, and table row across the dashboards is clickable straight through to the filtered alerts/incidents behind it.
 
 ### What Makes K3 SIEM Different
 
@@ -101,13 +101,13 @@ K3 SIEM is a full-stack **Security Information and Event Management** platform i
 
 ### 📊 Security Operations Dashboard (`/overview`)
 - **4 KPI Tiles**  Alerts (24h) with critical count, Open Incidents, Events Indexed (24h), SOAR Executions — each tile is clickable through to the matching filtered view
-- **14-Day Alert Trend** Area chart showing alert volume over time — click through to Alert Manager
+- **14-Day Alert Trend** Area chart showing alert volume over time click through to Alert Manager
 - **Severity Distribution** Bar chart breakdown (Critical / High / Medium / Low / Info) — click a bar to open Alert Manager pre-filtered to that severity
-- **⚡ Live Alert Feed** Real-time WebSocket stream of the latest 5 security alerts with MITRE technique tags — click a row to jump straight to that alert's detail panel
-- **📡 Live Event Stream** Top 10 raw events streaming live with green pulse indicator — click a row to open Event Explorer filtered to that host/user/IP
-- **🎯 Top MITRE Tactics** Ranked breakdown of MITRE ATT&CK tactics across all alerts — click a tactic to filter Alert Manager to it
-- **📊 Alert Status Summary** New / Assigned / In Progress / Closed counts — click a status to filter Alert Manager
-- **🔢 Platform Stats** IOC Hits, High-Risk Users, SOAR Runs, Events (24h) — each links to its module
+- **⚡ Live Alert Feed** Real-time WebSocket stream of the latest 5 security alerts with MITRE technique tags click a row to jump straight to that alert's detail panel
+- **📡 Live Event Stream** Top 10 raw events streaming live with green pulse indicator click a row to open Event Explorer filtered to that host/user/IP
+- **🎯 Top MITRE Tactics** Ranked breakdown of MITRE ATT&CK tactics across all alerts click a tactic to filter Alert Manager to it
+- **📊 Alert Status Summary** New / Assigned / In Progress / Closed counts click a status to filter Alert Manager
+- **🔢 Platform Stats** IOC Hits, High-Risk Users, SOAR Runs, Events (24h) each links to its module
 - **🖥️ Agent Status** and **📦 Asset Overview** tiles link to Agent Manager and Asset Inventory
 
 ### 🚨 Alert Manager
@@ -439,7 +439,7 @@ k3-siem/
 git clone https://github.com/astrax3v2/k3-siem.git
 cd k3-siem
 
-# Required — docker-compose refuses to start without these set.
+# Required docker-compose refuses to start without these set.
 cp .env.example .env
 # Edit .env: set POSTGRES_PASSWORD, JWT_SECRET, INGEST_API_KEY, CORS_ORIGIN
 # (or generate them: openssl rand -base64 48 / openssl rand -hex 32 / openssl rand -base64 24)
@@ -509,21 +509,21 @@ hands you a copy-paste install script) straight from the UI. See "Remote Deploym
 ### 🎯 Triage Center (Landing Page)
 | Section | Details |
 |---------|---------|
-| **KPI Tiles** | Open Alerts · Open Incidents · Critical in Queue · SLA Breaches — all clickable, filter the queue in place |
+| **KPI Tiles** | Open Alerts · Open Incidents · Critical in Queue · SLA Breaches all clickable, filter the queue in place |
 | **Unified Queue** | Alerts + incidents, severity/SLA sorted, kind/severity/search/breach filters |
 | **Detail Panel** | Metadata · SLA countdown & breach warning · status updates · team reassignment · playbook execution |
 
 ### 📊 Dashboard (`/overview`)
 | Section | Details |
 |---------|---------|
-| **KPI Tiles** | Alerts (24h) · Open Incidents · Events Indexed · SOAR Executions — click through to each module |
-| **Alert Trend Chart** | 14-day area chart with gradient fill — click to open Alert Manager |
-| **Severity Chart** | Bar chart: Critical (red), High (orange), Medium (blue), Low (green) — click a bar to filter Alert Manager |
-| **Live Alert Feed** | Real-time WebSocket stream with MITRE technique badges — click a row to open that alert |
-| **Live Event Stream** | Raw events with green pulse animation — click a row to open Event Explorer filtered to it |
-| **MITRE Tactics** | Ranked breakdown with horizontal progress bars — click to filter Alert Manager by tactic |
-| **Alert Status** | New / Assigned / In Progress / Closed counts — click to filter by status |
-| **Platform Stats** | IOC Hits · High-Risk Users · SOAR Runs · Events (24h) — each links to its module |
+| **KPI Tiles** | Alerts (24h) · Open Incidents · Events Indexed · SOAR Executions click through to each module |
+| **Alert Trend Chart** | 14-day area chart with gradient fill click to open Alert Manager |
+| **Severity Chart** | Bar chart: Critical (red), High (orange), Medium (blue), Low (green) click a bar to filter Alert Manager |
+| **Live Alert Feed** | Real-time WebSocket stream with MITRE technique badges click a row to open that alert |
+| **Live Event Stream** | Raw events with green pulse animation click a row to open Event Explorer filtered to it |
+| **MITRE Tactics** | Ranked breakdown with horizontal progress bars click to filter Alert Manager by tactic |
+| **Alert Status** | New / Assigned / In Progress / Closed counts click to filter by status |
+| **Platform Stats** | IOC Hits · High-Risk Users · SOAR Runs · Events (24h) each links to its module |
 
 ### 🚨 Alert Manager
 | Feature | Details |
@@ -562,7 +562,7 @@ hands you a copy-paste install script) straight from the UI. See "Remote Deploym
 | Feature | Details |
 |---------|---------|
 | **Templates** | SOC Overview (10 widgets) · Threat Hunting (6) · Vulnerability & Compliance (4) · Agent Fleet Health (5) · Identity & UEBA (4) |
-| **Widget Types** | 13 total — KPI tile, alert trend, severity bar, MITRE tactics, alert status, agent status, asset overview, vuln summary, IOC feed, alerts/events tables, live alert/event feeds |
+| **Widget Types** | 13 total  KPI tile, alert trend, severity bar, MITRE tactics, alert status, agent status, asset overview, vuln summary, IOC feed, alerts/events tables, live alert/event feeds |
 | **Grid Layout** | `sm`/`md`/`lg`/`full` widget spans on a 4-column grid |
 | **Sharing** | Save, edit, share/unshare, or delete your own dashboards |
 | **Clickable** | Every widget drills through to its filtered Alerts/Incidents/Events/Agents/Inventory view |
@@ -855,7 +855,7 @@ authentication.
 
 ### Backend Environment Variables
 
-**Required** — the app validates these at boot and exits if they're missing or too short (see `backend/src/config.js`):
+**Required** the app validates these at boot and exits if they're missing or too short (see `backend/src/config.js`):
 
 | Variable | Description |
 |----------|-------------|
