@@ -133,10 +133,14 @@ def parse_wevtutil_xml(raw_output):
                     elif ftag == "Level":
                         system["Level"] = (f.text or "").strip()
             elif tag == "EventData":
+                idx = 0
                 for d in child:
                     name = d.get("Name")
                     if name:
                         event_data[name] = d.text or ""
+                    else:
+                        event_data[f"Data_{idx}"] = d.text or ""
+                        idx += 1
         events.append({"Event": {"System": system, "EventData": event_data}})
     return events
 
@@ -161,7 +165,7 @@ def collect_windows_security(batch_size=50):
                     "computer": sys_data.get("Computer", socket.gethostname()),
                     "username": event_data.get("TargetUserName", event_data.get("SubjectUserName", "")),
                     "ip_address": event_data.get("IpAddress", get_local_ip()),
-                    "action": map_windows_event_action(eid),
+                    "action": describe_windows_security_event(eid, event_data),
                     "severity": map_windows_severity(eid),
                     "raw": json.dumps(evt),
                     "index": "windows-security",
@@ -228,6 +232,37 @@ def collect_windows_application(batch_size=50):
                 })
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
         print(f"[Collector] Windows Application collection failed: {e}")
+    return events
+
+
+def collect_windows_powershell(batch_size=50):
+    """Collect PowerShell Operational logs for script-block and engine activity."""
+    events = []
+    try:
+        result = subprocess.run(
+            ["wevtutil", "qe", "Microsoft-Windows-PowerShell/Operational", f"/c:{batch_size}", "/f:XML", "/rd:true"],
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode == 0:
+            for evt in parse_wevtutil_xml(result.stdout):
+                sys_data = evt["Event"]["System"]
+                event_data = evt["Event"]["EventData"]
+                eid = str(sys_data.get("EventID", ""))
+                script = extract_powershell_message(event_data)
+                events.append({
+                    "timestamp": sys_data.get("TimeCreated", {}).get("@SystemTime", now_iso()),
+                    "source": "Windows PowerShell",
+                    "event_id": eid,
+                    "computer": sys_data.get("Computer", socket.gethostname()),
+                    "username": event_data.get("UserId", event_data.get("ConnectedUser", "")),
+                    "ip_address": get_local_ip(),
+                    "action": script or f"PowerShell Event {eid}",
+                    "severity": map_windows_powershell_severity(eid, script),
+                    "raw": json.dumps(evt),
+                    "index": "windows-powershell",
+                })
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+        print(f"[Collector] Windows PowerShell collection failed: {e}")
     return events
 
 
@@ -361,6 +396,52 @@ def map_windows_event_action(eid):
         "1102": "Audit Log Cleared", "5156": "Network Connect",
         "4776": "Credential Validation",
     }.get(eid, "Security Event")
+
+
+def describe_windows_security_event(eid, event_data):
+    base = map_windows_event_action(eid)
+    if eid == "4688":
+        process_name = event_data.get("NewProcessName", "")
+        command_line = event_data.get("CommandLine", "")
+        parent_name = event_data.get("ParentProcessName", "")
+        details = [v for v in [process_name, command_line, f"Parent={parent_name}" if parent_name else ""] if v]
+        return " | ".join(details) if details else base
+    if eid == "4672":
+        privileges = event_data.get("PrivilegeList", "")
+        subject = event_data.get("SubjectUserName", "")
+        details = [v for v in [subject, privileges] if v]
+        return f"{base}: {' | '.join(details)}" if details else base
+    if eid in ("4697", "7045"):
+        service_name = event_data.get("ServiceName", "")
+        service_file = event_data.get("ServiceFileName", "")
+        details = [v for v in [service_name, service_file] if v]
+        return f"{base}: {' | '.join(details)}" if details else base
+    if eid == "4648":
+        process_name = event_data.get("ProcessName", "")
+        target_server = event_data.get("TargetServerName", "")
+        details = [v for v in [process_name, target_server] if v]
+        return f"{base}: {' | '.join(details)}" if details else base
+    return base
+
+
+def extract_powershell_message(event_data):
+    ordered = []
+    for key in ("ScriptBlockText", "Payload", "CommandLine", "Message", "ContextInfo", "HostApplication"):
+        val = event_data.get(key, "")
+        if val:
+            ordered.append(val.strip())
+    if not ordered:
+        ordered = [str(v).strip() for v in event_data.values() if str(v).strip()]
+    return " | ".join(ordered[:3])[:400] if ordered else ""
+
+
+def map_windows_powershell_severity(eid, script):
+    text = (script or "").lower()
+    if eid == "4104" and any(term in text for term in ["encodedcommand", "invoke-expression", "downloadstring", "frombase64string", "bypass"]):
+        return "High"
+    if eid in ("4103", "4104"):
+        return "Medium"
+    return "Info"
 
 
 def map_windows_severity(eid):
@@ -590,6 +671,7 @@ COLLECTORS = {
     "windows_security": collect_windows_security,
     "windows_system": collect_windows_system,
     "windows_application": collect_windows_application,
+    "windows_powershell": collect_windows_powershell,
     "linux_syslog": collect_linux_syslog,
     "linux_auth": collect_linux_auth,
 }
@@ -876,6 +958,68 @@ def collect_real_inventory():
                 parts = [p.strip() for p in line.split(",")]
                 if len(parts) >= 3 and parts[1]:
                     inv["installed_software"].append({"name": parts[1], "version": parts[2]})
+        except Exception:
+            pass
+        if not inv["installed_software"]:
+            try:
+                ps_script = r"""
+$paths = @(
+  'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*',
+  'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*',
+  'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'
+)
+$items = foreach ($path in $paths) {
+  Get-ItemProperty $path -ErrorAction SilentlyContinue |
+    Where-Object { $_.DisplayName } |
+    Select-Object DisplayName, DisplayVersion
+}
+$items |
+  Sort-Object DisplayName -Unique |
+  Select-Object -First 80 |
+  ConvertTo-Json -Compress
+"""
+                result = subprocess.run(
+                    ["powershell", "-NoProfile", "-Command", ps_script],
+                    capture_output=True, text=True, timeout=40
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    parsed = json.loads(result.stdout)
+                    if isinstance(parsed, dict):
+                        parsed = [parsed]
+                    for item in parsed:
+                        name = (item.get("DisplayName") or "").strip()
+                        version = (item.get("DisplayVersion") or "").strip()
+                        if name:
+                            inv["installed_software"].append({"name": name, "version": version})
+            except Exception:
+                pass
+        try:
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", "Get-Service | Where-Object {$_.Status -eq 'Running'} | Select-Object -First 40 Name,Status | ConvertTo-Json -Compress"],
+                capture_output=True, text=True, timeout=20
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                parsed = json.loads(result.stdout)
+                if isinstance(parsed, dict):
+                    parsed = [parsed]
+                for item in parsed:
+                    name = (item.get("Name") or "").strip()
+                    status = str(item.get("Status") or "running").lower()
+                    if name:
+                        inv["running_services"].append({"name": name, "status": status})
+        except Exception:
+            pass
+        try:
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", "Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntiVirusProduct | Select-Object -First 1 displayName | ConvertTo-Json -Compress"],
+                capture_output=True, text=True, timeout=15
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                parsed = json.loads(result.stdout)
+                if isinstance(parsed, dict):
+                    av_name = (parsed.get("displayName") or "").strip()
+                    if av_name:
+                        inv["antivirus_status"] = av_name
         except Exception:
             pass
         try:

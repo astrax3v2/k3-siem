@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
-- **Process Tree / Attack Chain Investigation** — a CrowdStrike Falcon-style process execution
+- **Process Tree / Attack Chain Investigation** - a CrowdStrike Falcon-style process execution
   tree for tracing a compromise from initial entry to full compromise. New `process_nodes`
   table stores parent/child process lineage (pid/ppid), MITRE tactic/technique, severity, and
   per-stage `first_detected_by`, `auto_analysis`, `impact`, `remediation`, and
@@ -15,9 +15,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   for an executive summary. `GET /api/incidents/:id` now returns the linked `process_tree`.
   New **Process Tree** page (reachable via "View Process Tree" on the Incident Response detail
   panel) renders the tree with a click-to-expand detail panel per stage. Seeded with a
-  realistic 10-stage demo incident (`IR-007`): phishing email → malicious macro → PowerShell →
-  recon → C2 download → persistence → discovery → LSASS credential dump → lateral movement to
-  the domain controller → ransomware deployment.
+  realistic 10-stage demo incident (`IR-007`): phishing email -> malicious macro -> PowerShell
+  -> recon -> C2 download -> persistence -> discovery -> LSASS credential dump -> lateral
+  movement to the domain controller -> ransomware deployment.
+- **Windows live monitoring pipeline** - added PowerShell Operational log ingestion, better
+  Windows event parsing for unnamed XML data fields, richer Windows inventory collection, and
+  real-time alert creation for live agent-ingested telemetry.
+- **Operational live-data helpers** - added `scripts/purge-demo-operational-data.js` to clear
+  seeded operational records before switching to real telemetry, plus
+  `scripts/switch-to-live-monitoring.ps1` for local live-monitoring restarts.
+
+### Changed
+- **SOAR playbooks** now support inline editing from the UI, so the Edit action updates
+  playbook metadata and steps instead of being a dead-end button.
+- **Asset Inventory** now exposes installed endpoint applications more clearly in inventory
+  listings and detail views, including security tooling such as SentinelOne or SIEM agents when
+  present on the host.
+- **Demo access** now includes a seeded T1 analyst account (`analyst1` / `K3@2026`) alongside
+  the existing admin and T2 analyst accounts for role-based testing.
 
 ## [2.0.1] - 2026-06-30
 
@@ -44,21 +59,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   (`GET /api/audit`), nightly retention purging, `/health` and `/ready` endpoints, graceful
   shutdown, and `scripts/backup.sh` / `restore.sh`.
 - Jest test suite (22 tests) and a GitHub Actions CI workflow.
-- **CVE / vulnerability scanning** — agents scan installed software and the host OS against
+- **CVE / vulnerability scanning** - agents scan installed software and the host OS against
   the NVD CVE database on a background thread; new `vulnerabilities` table, ingest/query
   endpoints, and a dedicated Vulnerability Scanner page plus a CVE panel in Asset Inventory.
-- **Auto OCSF log parser** — schema-light mapper that auto-detects log shape (Windows
+- **Auto OCSF log parser** - schema-light mapper that auto-detects log shape (Windows
   wevtutil JSON, journald JSON, syslog/auth.log text, CEF, generic JSON, raw text) and
   classifies it into the correct OCSF class. Every ingested event is normalized into OCSF
   alongside the raw log; new `/api/ocsf` routes and an OCSF Parser page for ad-hoc log pasting.
-- **Agent system** — SentinelOne-style Python cross-platform agent collecting Windows Event
+- **Agent system** - SentinelOne-style Python cross-platform agent collecting Windows Event
   Logs, Linux syslog/auth, or simulating an endpoint; registration, heartbeat, and health
   monitoring with auto-alerting on offline agents; Agent Manager UI.
 - PostgreSQL 16 as the primary database for Docker deployments (SQLite retained for local dev).
 - Docker Compose stack with 3 simulated agent containers (Windows, Linux, Network).
 
 ### Security
-- Removed hardcoded `JWT_SECRET` / `INGEST_API_KEY` fallbacks — the app now fails fast at
+- Removed hardcoded `JWT_SECRET` / `INGEST_API_KEY` fallbacks - the app now fails fast at
   boot if they're unset.
 - Reject wildcard CORS in production; require explicit origin(s).
 - Redact SSH credentials from deployment logs; warn on password auth.

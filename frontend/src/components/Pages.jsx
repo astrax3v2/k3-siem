@@ -423,6 +423,10 @@ export function SOAR() {
   const [loading, setLoading] = useState(true);
   const [executing, setExecuting] = useState({});
   const [execStatus, setExecStatus] = useState({});
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({ name: '', description: '', trigger_condition: '', status: 'Active', stepsText: '' });
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState('');
   const canExecute = user?.role === 'admin' || user?.role === 't2_analyst';
 
   useEffect(() => {
@@ -446,6 +450,50 @@ export function SOAR() {
         }
       }, 900);
     } catch { setExecuting(e => ({ ...e, [pb.id]: false })); }
+  };
+
+  const startEdit = (pb) => {
+    let steps = [];
+    try { steps = JSON.parse(pb.steps || '[]'); } catch { }
+    setEditingId(pb.id);
+    setEditError('');
+    setEditForm({
+      name: pb.name || '',
+      description: pb.description || '',
+      trigger_condition: pb.trigger_condition || '',
+      status: pb.status || 'Active',
+      stepsText: steps.join('\n'),
+    });
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setSavingEdit(false);
+    setEditError('');
+  };
+
+  const saveEdit = async (id) => {
+    setSavingEdit(true);
+    setEditError('');
+    try {
+      const steps = editForm.stepsText.split(/\r?\n/).map((step) => step.trim()).filter(Boolean);
+      const res = await soarApi.update(id, {
+        name: editForm.name.trim(),
+        description: editForm.description.trim(),
+        trigger_condition: editForm.trigger_condition.trim(),
+        status: editForm.status,
+        steps,
+      });
+      setData((current) => ({
+        ...current,
+        playbooks: current.playbooks.map((pb) => (pb.id === id ? res.data : pb)),
+      }));
+      setEditingId(null);
+    } catch (err) {
+      setEditError(err?.response?.data?.error || 'Unable to save playbook changes');
+    } finally {
+      setSavingEdit(false);
+    }
   };
 
   return (
@@ -477,6 +525,11 @@ export function SOAR() {
               <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 8 }}>
                 Trigger: <span style={{ color: 'var(--text2)' }}>{pb.trigger_condition}</span>
               </div>
+              {pb.description && (
+                <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 8 }}>
+                  {pb.description}
+                </div>
+              )}
               {isRunning && exec && (
                 <div style={{ marginBottom: 8 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text2)', marginBottom: 4 }}>
@@ -505,8 +558,27 @@ export function SOAR() {
                 <button className={`btn btn-sm ${pb.status === 'Active' ? 'btn-primary' : 'btn-secondary'}`} disabled={!canExecute || isRunning || pb.status !== 'Active'} onClick={() => executePB(pb)}>
                   {isRunning ? '⏳ Running…' : '▶ Execute'}
                 </button>
-                <button className="btn btn-secondary btn-sm">Edit</button>
+                <button className="btn btn-secondary btn-sm" disabled={!canExecute || savingEdit} onClick={() => startEdit(pb)}>Edit</button>
               </div>
+              {editingId === pb.id && (
+                <div style={{ marginTop: 10, padding: 10, borderRadius: 6, background: 'var(--bg3)', border: '1px solid var(--border)', display: 'grid', gap: 8 }}>
+                  <input value={editForm.name} onChange={(e) => setEditForm((form) => ({ ...form, name: e.target.value }))} placeholder="Playbook name" style={{ padding: '7px 10px', fontSize: 12 }} />
+                  <input value={editForm.trigger_condition} onChange={(e) => setEditForm((form) => ({ ...form, trigger_condition: e.target.value }))} placeholder="Trigger condition" style={{ padding: '7px 10px', fontSize: 12 }} />
+                  <textarea value={editForm.description} onChange={(e) => setEditForm((form) => ({ ...form, description: e.target.value }))} placeholder="Description" rows={2} style={{ padding: '7px 10px', fontSize: 12, resize: 'vertical' }} />
+                  <select value={editForm.status} onChange={(e) => setEditForm((form) => ({ ...form, status: e.target.value }))} style={{ padding: '7px 10px', fontSize: 12 }}>
+                    <option value="Active">Active</option>
+                    <option value="Paused">Paused</option>
+                  </select>
+                  <textarea value={editForm.stepsText} onChange={(e) => setEditForm((form) => ({ ...form, stepsText: e.target.value }))} placeholder="One step per line" rows={7} style={{ padding: '7px 10px', fontSize: 12, resize: 'vertical' }} />
+                  {editError && <div style={{ fontSize: 11, color: '#fc8181' }}>{editError}</div>}
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button className="btn btn-primary btn-sm" disabled={savingEdit} onClick={() => saveEdit(pb.id)}>
+                      {savingEdit ? 'Saving…' : 'Save'}
+                    </button>
+                    <button className="btn btn-secondary btn-sm" disabled={savingEdit} onClick={cancelEdit}>Cancel</button>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}

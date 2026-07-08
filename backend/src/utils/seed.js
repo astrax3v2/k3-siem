@@ -235,8 +235,14 @@ async function seed() {
     ['Malware Execution Chain','Script exec → injection → C2 beacon','CmdLine has bypass → ProcessInjection → OutboundC2','Critical',97,10,'["endpoint-edr","network-flow"]',1,2],
     ['Account Takeover Pattern','Password spray → MFA enroll → mass access','FailedLogin count>5 external → MFADeviceAdd → MailboxAccess count>50','High',91,60,'["cloud-identity","windows-security"]',5,4],
     ['Kerberoasting Detection','SPN ticket requests for many accounts','EventID==4769 EncryptionType==0x17 count>5 same_user','High',85,5,'["windows-security"]',5,2],
+    ['Windows Audit Log Cleared','Security audit log cleared on a Windows host','EventID==1102','Critical',99,5,'["windows-security"]',1,0],
+    ['Suspicious PowerShell Encoded Command','PowerShell command line contains encoded execution switches','CmdLine has encodedcommand','High',92,15,'["windows-powershell","windows-security"]',1,0],
+    ['PowerShell Download Cradle','PowerShell command line includes download cradle behavior','CmdLine has downloadstring','Critical',94,15,'["windows-powershell","windows-security"]',1,0],
+    ['New Service Installed on Windows','A new Windows service was created or installed','EventID==7045','High',87,10,'["windows-system","windows-security"]',1,0],
+    ['Explicit Credential Logon Spike','Repeated explicit credential logons on a Windows host','EventID==4648','High',82,10,'["windows-security"]',3,0],
+    ['Special Privileges Assigned','Special administrator-style privileges assigned to a non-system account','EventID==4672','High',84,10,'["windows-security"]',2,0],
   ]) await insCR.run(uuidv4(),name,desc,logic,sev,score,win,idx,thr,hits);
-  console.log('[Seed] Correlation rules: 6');
+  console.log('[Seed] Correlation rules: 12');
 
   // Playbooks
   const insPB = d.prepare(`INSERT INTO playbooks(id,name,description,trigger_condition,status,steps,execution_count) VALUES(?,?,?,?,?,?,?)`);
@@ -300,14 +306,14 @@ async function seed() {
     { hostname: 'WS-PC-001', os: 'Windows 11 Pro', ip: '192.168.1.66', version: '1.0.0', sources: ['Windows Security', 'CrowdStrike EDR'], events: 1247, team: teamBlue,
       asset: { os_name: 'Windows 11 Pro', os_version: '10.0.22631', os_arch: 'x86_64', cpu_model: 'Intel Core i7-13700K', cpu_cores: 16, ram: 16.0, disk: 512.0, disk_used: 287.3, av: 'CrowdStrike Falcon', fw: 1, patch: '2026-06-15', uptime: 168.5, domain: 'corp.k3sec.io', serial: 'K3-WS-001',
         net: [{"name":"Ethernet","ip":"192.168.1.66","mac":"00:1A:2B:3C:4D:5E"}],
-        sw: [{"name":"CrowdStrike Falcon","version":"7.10"},{"name":"Microsoft 365","version":"16.0"},{"name":"Chrome","version":"126.0"},{"name":"VS Code","version":"1.92"},{"name":"Python 3.12","version":"3.12.4"},{"name":"Slack","version":"4.39"},{"name":"Zoom","version":"6.1"},{"name":"7-Zip","version":"24.07"}],
+        sw: [{"name":"CrowdStrike Falcon","version":"7.10"},{"name":"SentinelOne Agent","version":"24.2"},{"name":"K3 SIEM Agent","version":"1.0.0"},{"name":"Microsoft 365","version":"16.0"},{"name":"Chrome","version":"126.0"},{"name":"VS Code","version":"1.92"},{"name":"Python 3.12","version":"3.12.4"},{"name":"Slack","version":"4.39"},{"name":"Zoom","version":"6.1"},{"name":"7-Zip","version":"24.07"}],
         svc: [{"name":"CrowdStrike","status":"running"},{"name":"Windows Defender","status":"running"},{"name":"DNS Client","status":"running"}],
         ports: [{"port":135,"proto":"tcp"},{"port":445,"proto":"tcp"},{"port":3389,"proto":"tcp"}],
         users: [{"name":"john.doe"},{"name":"Administrator"}] }},
     { hostname: 'SRV-UBUNTU-01', os: 'Ubuntu 24.04 LTS', ip: '10.0.1.50', version: '1.0.0', sources: ['Linux Syslog', 'OSSEC HIDS'], events: 3892, team: teamRed,
       asset: { os_name: 'Ubuntu 24.04 LTS', os_version: '6.8.0-45-generic', os_arch: 'x86_64', cpu_model: 'AMD EPYC 7763', cpu_cores: 8, ram: 64.0, disk: 1000.0, disk_used: 423.7, av: 'ClamAV', fw: 1, patch: '2026-06-20', uptime: 744.2, domain: 'srv.k3sec.io', serial: 'K3-SRV-001',
         net: [{"name":"eth0","ip":"10.0.1.50","mac":"02:42:AC:11:00:02"}],
-        sw: [{"name":"openssh-server","version":"9.6p1"},{"name":"nginx","version":"1.24.0"},{"name":"postgresql-16","version":"16.3"},{"name":"docker-ce","version":"27.1"},{"name":"python3","version":"3.12.3"},{"name":"clamav","version":"1.3.1"},{"name":"fail2ban","version":"1.0.2"}],
+        sw: [{"name":"openssh-server","version":"9.6p1"},{"name":"nginx","version":"1.24.0"},{"name":"postgresql-16","version":"16.3"},{"name":"docker-ce","version":"27.1"},{"name":"python3","version":"3.12.3"},{"name":"clamav","version":"1.3.1"},{"name":"SentinelOne Linux Agent","version":"24.2"},{"name":"K3 SIEM Agent","version":"1.0.0"},{"name":"fail2ban","version":"1.0.2"}],
         svc: [{"name":"sshd","status":"running"},{"name":"nginx","status":"running"},{"name":"postgresql","status":"running"},{"name":"docker","status":"running"},{"name":"clamav-daemon","status":"running"}],
         ports: [{"port":22,"proto":"tcp"},{"port":80,"proto":"tcp"},{"port":443,"proto":"tcp"},{"port":5432,"proto":"tcp"}],
         users: [{"name":"root"},{"name":"ubuntu"},{"name":"deploy"},{"name":"postgres"}] }},
@@ -351,7 +357,11 @@ async function seed() {
   console.log('[Seed] Team-scoping demo agents: 2 (WS-001 -> Blue Team, SRV-001 -> Red Team)');
 
   console.log('\n✅ Seed complete!');
-  console.log('   Login: pbasnet / K3@2026');
+  console.log('   Demo logins:');
+  console.log('     Admin      -> pbasnet / K3@2026');
+  console.log('     T2 Analyst -> jmaharjan / K3@2026');
+  console.log('     T2 Analyst -> bpaudel / K3@2026');
+  console.log('     T1 Analyst -> analyst1 / K3@2026');
 }
 
 seed().catch(e => { console.error(e); process.exit(1); });

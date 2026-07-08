@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { assetsApi, vulnApi } from '../../services/api';
 import { formatDistanceToNow } from 'date-fns';
+function softwareName(item) { return typeof item === 'object' ? item.name : item; }
 
 const OS_ICONS = { Windows: '🪟', Ubuntu: '🐧', Linux: '🐧', 'PAN-OS': '🔥', macOS: '🍎', CentOS: '🐧', Debian: '🐧' };
 function osIcon(name) { if (!name) return '🖥️'; for (const [k, v] of Object.entries(OS_ICONS)) { if (name.includes(k)) return v; } return '🖥️'; }
@@ -54,7 +55,7 @@ export default function AssetInventory() {
 
         {/* Filters */}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <input placeholder="Search hostname, OS, CPU…" value={filters.search} onChange={e => setFilters(f => ({ ...f, search: e.target.value }))} style={{ width: 220, padding: '5px 10px', fontSize: 12 }} />
+          <input placeholder="Search hostname, OS, CPU, app…" value={filters.search} onChange={e => setFilters(f => ({ ...f, search: e.target.value }))} style={{ width: 220, padding: '5px 10px', fontSize: 12 }} />
           <select value={filters.os} onChange={e => setFilters(f => ({ ...f, os: e.target.value }))} style={{ padding: '5px 8px', fontSize: 12 }}>
             <option value="">All OS</option>
             <option value="Windows">Windows</option>
@@ -77,16 +78,17 @@ export default function AssetInventory() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
               <thead>
                 <tr style={{ background: 'var(--bg3)', position: 'sticky', top: 0, zIndex: 1 }}>
-                  {['OS', 'Hostname', 'IP', 'CPU', 'RAM', 'Disk', 'AV Status', 'Firewall', 'Uptime', 'Last Updated'].map(h => (
+                  {['OS', 'Hostname', 'IP', 'Applications', 'CPU', 'RAM', 'Disk', 'AV Status', 'Firewall', 'Uptime', 'Last Updated'].map(h => (
                     <th key={h} style={{ padding: '8px 10px', textAlign: 'left', color: 'var(--text3)', fontWeight: 600, fontSize: 11, borderBottom: '1px solid var(--border)' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {assets.length === 0 ? (
-                  <tr><td colSpan={10} style={{ padding: 40, textAlign: 'center', color: 'var(--text3)' }}>No assets collected yet. Deploy agents to start collecting inventory.</td></tr>
+                  <tr><td colSpan={11} style={{ padding: 40, textAlign: 'center', color: 'var(--text3)' }}>No assets collected yet. Deploy agents to start collecting inventory.</td></tr>
                 ) : assets.map(a => {
                   const diskPct = a.disk_total_gb > 0 ? Math.round((a.disk_used_gb / a.disk_total_gb) * 100) : 0;
+                  const installedApps = (a.installed_software || []).map(softwareName).filter(Boolean);
                   return (
                     <tr key={a.agent_id} onClick={() => setSelected(selected === a.agent_id ? null : a.agent_id)}
                       style={{ cursor: 'pointer', background: selected === a.agent_id ? 'var(--navy)' : 'transparent', borderBottom: '1px solid var(--border)' }}
@@ -95,6 +97,18 @@ export default function AssetInventory() {
                       <td style={{ padding: '8px 10px' }}>{osIcon(a.os_name)} <span style={{ fontSize: 11 }}>{a.os_name || 'Unknown'}</span></td>
                       <td style={{ padding: '8px 10px', color: '#fff', fontWeight: 600 }}>{a.hostname}</td>
                       <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontSize: 11, color: 'var(--text2)' }}>{a.agent_ip || '-'}</td>
+                      <td style={{ padding: '8px 10px', minWidth: 220 }}>
+                        {installedApps.length > 0 ? (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                            {installedApps.slice(0, 3).map((app, i) => (
+                              <span key={`${a.agent_id}:app:${i}`} style={{ background: 'var(--bg3)', color: 'var(--text2)', fontSize: 10, padding: '2px 6px', borderRadius: 999 }}>
+                                {app}
+                              </span>
+                            ))}
+                            {installedApps.length > 3 && <span style={{ fontSize: 10, color: 'var(--text3)' }}>+{installedApps.length - 3} more</span>}
+                          </div>
+                        ) : <span style={{ fontSize: 11, color: 'var(--text3)' }}>No app data</span>}
+                      </td>
                       <td style={{ padding: '8px 10px', fontSize: 11, color: 'var(--text2)' }}>{a.cpu_model ? `${a.cpu_model} (${a.cpu_cores}c)` : '-'}</td>
                       <td style={{ padding: '8px 10px', color: 'var(--gold)', fontWeight: 600, fontSize: 11 }}>{a.ram_total_gb ? `${a.ram_total_gb} GB` : '-'}</td>
                       <td style={{ padding: '8px 10px' }}>

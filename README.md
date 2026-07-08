@@ -189,6 +189,11 @@ to full compromise, reachable from any incident with a reconstructed attack chai
   - 🦠 Malware Execution Chain
   - 👤 Account Takeover Pattern
   - 🎫 Kerberoasting Attack
+  - Windows Audit Log Cleared
+  - Suspicious PowerShell Encoded Command / Download Cradle
+  - New Service Installed on Windows
+  - Explicit Credential Logon Spike
+  - Special Privileges Assigned
 - **RBAC** Only admin/t2_analyst can create or toggle rules
 
 ### 🔴 Threat Intelligence
@@ -218,6 +223,7 @@ to full compromise, reachable from any incident with a reconstructed attack chai
   - **Live Execution Progress** Step-by-step progress bar with completion percentage
   - Numbered step circles (completed = green checkmark ✓)
   - Execute / Edit buttons (role-gated)
+  - **Inline Playbook Editing** update playbook name, trigger, status, and steps directly in the UI
 - **Built-in Playbooks**:
   - 🔐 Brute Force Response Block IP, reset password, create ticket, notify SOC
   - 🦠 Malware Containment Isolate endpoint, collect forensics, block hash, alert team
@@ -457,7 +463,12 @@ This starts **5 containers**:
 | 🐧 `agent-linux` | Simulated Linux server (SRV-UBUNTU-01) + CVE scan | — |
 | 🔥 `agent-network` | Simulated network device (FW-PALOALTO-01) + CVE scan | — |
 
-Open **http://localhost:3001** → Login with `pbasnet` / `K3@2026`
+Open **http://localhost:3001** → Login with:
+
+- `pbasnet` / `K3@2026` — Admin
+- `jmaharjan` / `K3@2026` — T2 Analyst
+- `bpaudel` / `K3@2026` — T2 Analyst
+- `analyst1` / `K3@2026` — T1 Analyst
 
 ### Option 2: Local Development (SQLite)
 
@@ -547,6 +558,7 @@ hands you a copy-paste install script) straight from the UI. See "Remote Deploym
 |---------|---------|
 | **Hardware/OS** | CPU, cores, RAM, disk used/total, uptime, domain, serial number |
 | **Software** | Installed software, running services, open ports, local users |
+| **Installed Apps List** | Inventory now shows applications discovered from Windows uninstall registry keys and other local inventory sources, making tools like SentinelOne and SIEM agents visible per asset |
 | **Compliance** | Firewall/antivirus status rolled up into a fleet-wide compliance percentage |
 | **Per-Asset Detail** | Linked agent status/heartbeat + that asset's vulnerability findings |
 
@@ -610,7 +622,7 @@ hands you a copy-paste install script) straight from the UI. See "Remote Deploym
 | Feature | Details |
 |---------|---------|
 | **Playbooks** | Brute Force · Malware · Phishing · Privilege Escalation |
-| **Execution** | Live progress bar · Step checkmarks · Completion message |
+| **Execution** | Live progress bar · Step checkmarks · Completion message · inline editing for supported roles |
 | **Connectors** | Jira · Slack · CrowdStrike · Palo Alto · ServiceNow · Teams · MISP · Email |
 
 ### 🔴 Threat Intelligence
@@ -644,11 +656,22 @@ hands you a copy-paste install script) straight from the UI. See "Remote Deploym
    30 minutes
 8. **Monitoring** → Backend checks heartbeats every 60s, marks offline after 5 min
 
+### Live Monitoring Notes
+
+- Set backend `DEMO_MODE=false` when you want only real agent-ingested telemetry in the UI.
+- Run `node scripts/purge-demo-operational-data.js` before switching an environment from demo
+  data to live telemetry if you want to clear seeded events, alerts, incidents, vulnerabilities,
+  and related operational records.
+- The agent stores its persistent registration state in `k3-agent/agent_state.json`; this is
+  runtime-only state and is gitignored by default.
+- Windows detection quality improves when Security, System, Application, and PowerShell
+  Operational logs are available with the required host audit/logging policies enabled.
+
 ### Supported Log Sources
 
 | Platform | Sources | Method |
 |----------|---------|--------|
-| 🪟 **Windows** | Security, System, Application Event Logs | `wevtutil` / PowerShell |
+| 🪟 **Windows** | Security, System, Application, PowerShell Operational Event Logs | `wevtutil` / PowerShell |
 | 🐧 **Linux** | syslog, auth.log, secure | `journalctl` / file tailing |
 | 📦 **Application Logs** | IIS, nginx, MySQL/Postgres, Docker, and other installed apps | Auto-discovered on the agent's host (`auto_discover_app_logs`) |
 | 🔥 **Network** | Firewall, IDS, DNS, VPN | Simulated (extensible) |
@@ -678,6 +701,7 @@ sources:
   - windows_security
   - windows_system
   - windows_application
+  - windows_powershell
   - linux_syslog
   - linux_auth
   - app_logs
@@ -705,7 +729,7 @@ simulate: false
 | `K3_HEARTBEAT_INTERVAL` | `30` | Seconds between heartbeats |
 | `K3_VULN_SCAN` | `true` | Enable/disable the CVE vulnerability scan |
 | `K3_NVD_API_KEY` | — | NVD API key — raises the CVE lookup rate limit from 5 to 50 req/30s |
-| `K3_STATE_PATH` | `agent_state.json` | Where the agent persists its registered `agent_id` across restarts |
+| `K3_STATE_PATH` | `agent_state.json` | Where the agent persists its registered `agent_id` across restarts (runtime-only, gitignored by default) |
 
 ### 🛡️ Vulnerability Scanning
 
@@ -943,6 +967,9 @@ accounts (or their passwords) before exposing a deployment publicly.**
 T1/T2 analysts only see alerts, incidents, and agents belonging to their assigned team (plus
 anything unassigned, visible to everyone as a shared inbox) — admins see everything. Manage
 teams and assign users/agents to them under **Admin → Teams & Users** (admin only).
+
+For quick role-based testing, use `pbasnet` for admin-only workflows, `jmaharjan` or
+`bpaudel` for T2 analyst permissions, and `analyst1` for T1 analyst validation.
 
 ---
 

@@ -10,5 +10,6 @@ frontend/build/
 __pycache__/
 *.pyc
 k3-agent/venv/
+k3-agent/agent_state.json
 .claude/
 backups/

@@ -170,7 +170,10 @@ router.get('/assets/list', authenticate, async (req, res) => {
   const d = db();
   let where = [], params = [];
   if (os) { where.push('os_name LIKE ?'); params.push(`%${os}%`); }
-  if (search) { where.push('(hostname LIKE ? OR os_name LIKE ? OR cpu_model LIKE ?)'); params.push(`%${search}%`, `%${search}%`, `%${search}%`); }
+  if (search) {
+    where.push('(hostname LIKE ? OR os_name LIKE ? OR cpu_model LIKE ? OR installed_software LIKE ?)');
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+  }
   if (compliance === 'compliant') { where.push('firewall_enabled = 1 AND antivirus_status != ? AND antivirus_status != ?'); params.push('None', 'Unknown'); }
   if (compliance === 'non-compliant') { where.push('(firewall_enabled = 0 OR antivirus_status = ? OR antivirus_status = ?)'); params.push('None', 'Unknown'); }
   const wc = where.length ? 'WHERE ' + where.join(' AND ') : '';

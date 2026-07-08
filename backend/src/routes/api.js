@@ -158,6 +158,30 @@ router.get('/soar/playbooks', authenticate, async (req, res) => {
   res.json({ playbooks: await d.prepare('SELECT * FROM playbooks ORDER BY execution_count DESC').all(), executions: await d.prepare('SELECT * FROM playbook_executions ORDER BY started_at DESC LIMIT 20').all() });
 });
 
+router.patch('/soar/playbooks/:id', authenticate, authorize(ROLE_T2, ROLE_ADMIN), async (req, res) => {
+  const d = db();
+  const existing = await d.prepare('SELECT * FROM playbooks WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Not found' });
+
+  const { name, description, trigger_condition, status, steps } = req.body;
+  if (!name || !String(name).trim()) return res.status(400).json({ error: 'name required' });
+  if (!trigger_condition || !String(trigger_condition).trim()) return res.status(400).json({ error: 'trigger_condition required' });
+
+  const normalizedStatus = status === 'Paused' ? 'Paused' : 'Active';
+  const normalizedSteps = Array.isArray(steps)
+    ? steps.map((step) => String(step).trim()).filter(Boolean)
+    : String(steps || '')
+      .split(/\r?\n/)
+      .map((step) => step.trim())
+      .filter(Boolean);
+
+  await d.prepare('UPDATE playbooks SET name=?, description=?, trigger_condition=?, status=?, steps=? WHERE id=?')
+    .run(String(name).trim(), description || '', String(trigger_condition).trim(), normalizedStatus, JSON.stringify(normalizedSteps), req.params.id);
+  await logAction(req.user.username, 'playbook_updated', 'playbook', req.params.id, String(name).trim(), req.ip);
+
+  res.json(await d.prepare('SELECT * FROM playbooks WHERE id = ?').get(req.params.id));
+});
+
 router.post('/soar/playbooks/:id/execute', authenticate, authorize(ROLE_T2, ROLE_ADMIN), async (req, res) => {
   const { alert_id } = req.body;
   const d = db();

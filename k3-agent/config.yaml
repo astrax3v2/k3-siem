@@ -1,5 +1,5 @@
 siem_url: http://localhost:3001
-api_key: k3-ingest-key
+api_key: k3-siem-local-dev-ingest-key-change-in-production
 agent_version: "1.0.0"
 
 collection_interval: 10
@@ -10,6 +10,7 @@ sources:
   - windows_security
   - windows_system
   - windows_application
+  - windows_powershell
   - linux_syslog
   - linux_auth
   - app_logs
@@ -22,3 +23,4 @@ app_log_paths: []
 app_log_max_files: 40
 
 simulate: false
+vuln_scan_enabled: false
