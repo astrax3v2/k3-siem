@@ -57,6 +57,7 @@ export const soarApi = {
   playbooks: () => api.get('/soar/playbooks'),
   execute: (id, alertId) => api.post(`/soar/playbooks/${id}/execute`, { alert_id: alertId }),
   execution: (id) => api.get(`/soar/executions/${id}`),
+  update: (id, data) => api.patch(`/soar/playbooks/${id}`, data),
 };
 
 export const uebaApi = {

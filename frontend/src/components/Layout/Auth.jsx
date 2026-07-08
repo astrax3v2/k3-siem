@@ -40,12 +40,18 @@ export function LoginPage() {
   const [creds, setCreds] = useState({ username: 'pbasnet', password: 'K3@2026' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const demoAccounts = [
+    { username: 'pbasnet', role: 'Admin' },
+    { username: 'jmaharjan', role: 'T2 Analyst' },
+    { username: 'bpaudel', role: 'T2 Analyst' },
+    { username: 'analyst1', role: 'T1 Analyst' },
+  ];
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true); setError('');
     try { await login(creds.username, creds.password); }
-    catch { setError('Invalid credentials. Try: pbasnet / K3@2026'); }
+    catch { setError('Invalid credentials. Try one of the demo accounts below with password K3@2026.'); }
     finally { setLoading(false); }
   };
 
@@ -73,6 +79,26 @@ export function LoginPage() {
               {loading ? 'Authenticating…' : 'Sign In to SIEM'}
             </button>
           </form>
+          <div style={{ marginTop: 16, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+            <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 8 }}>Demo accounts for testing</div>
+            <div style={{ display: 'grid', gap: 6 }}>
+              {demoAccounts.map((account) => (
+                <button
+                  key={account.username}
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  style={{ width: '100%', display: 'flex', justifyContent: 'space-between' }}
+                  onClick={() => setCreds({ username: account.username, password: 'K3@2026' })}
+                >
+                  <span>{account.username}</span>
+                  <span style={{ color: 'var(--text3)', fontSize: 11 }}>{account.role}</span>
+                </button>
+              ))}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
+              Shared demo password: <span style={{ color: 'var(--gold)' }}>K3@2026</span>
+            </div>
+          </div>
         </div>
         <div style={{ textAlign: 'center', marginTop: 16, fontSize: 11, color: 'var(--text3)' }}>
           K3 SIEM · v2.4.1

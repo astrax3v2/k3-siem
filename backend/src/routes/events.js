@@ -5,6 +5,7 @@ const { db, sqlNowMinus } = require('../models/db');
 const { authenticate } = require('../middleware/auth');
 const { parseToOCSF } = require('../services/ocsfParser');
 const { matchIOCs } = require('../services/iocMatcher');
+const { buildRealtimeAlerts, persistRealtimeAlerts } = require('../services/realtimeAlerts');
 const { INGEST_API_KEY } = require('../config');
 const router = express.Router();
 
@@ -77,6 +78,20 @@ router.post('/ingest', async (req, res) => {
         .run(rows.length, new Date().toISOString(), agentId);
     } catch {}
   }
+
+  const normalized = logs.map((l) => ({
+    source: l.source || 'Unknown',
+    event_id: String(l.event_id || ''),
+    computer: l.computer || null,
+    username: l.username || null,
+    ip_address: l.ip_address || null,
+    action: l.action || '',
+    severity: l.severity || 'Info',
+  }));
+
+  Promise.all(normalized.map((event) => buildRealtimeAlerts(event)))
+    .then((groups) => persistRealtimeAlerts(groups.flat()))
+    .catch(() => {});
 
   // IOC matching runs after the response is queued so ingestion latency isn't gated on it.
   Promise.all(logs.map((l) => matchIOCs({
