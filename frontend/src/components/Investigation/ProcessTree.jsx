@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { incidentsApi } from '../../services/api';
+import OsintPanel from '../OSINT/OsintPanel';
 
 const SEV = { Critical: 'badge-red', High: 'badge-orange', Medium: 'badge-blue', Low: 'badge-green', Info: 'badge-gray' };
 const SEV_COLOR = { Critical: '#fc8181', High: '#f6ad55', Medium: '#90cdf4', Low: '#68d391', Info: '#94a3b8' };
@@ -58,6 +59,7 @@ export default function ProcessTree() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState(null);
+  const [osintTarget, setOsintTarget] = useState(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -127,7 +129,15 @@ export default function ProcessTree() {
               <div><span style={{ color: 'var(--text3)' }}>User</span><div>{selected.username}</div></div>
               <div style={{ gridColumn: '1 / -1' }}><span style={{ color: 'var(--text3)' }}>Image</span><div style={{ fontFamily: 'monospace', fontSize: 11, wordBreak: 'break-all' }}>{selected.image}</div></div>
               <div style={{ gridColumn: '1 / -1' }}><span style={{ color: 'var(--text3)' }}>Command Line</span><div style={{ fontFamily: 'monospace', fontSize: 11, wordBreak: 'break-all', background: 'var(--bg4)', padding: 6, borderRadius: 4 }}>{selected.command_line}</div></div>
-              {selected.sha256 && <div style={{ gridColumn: '1 / -1' }}><span style={{ color: 'var(--text3)' }}>SHA256</span><div style={{ fontFamily: 'monospace', fontSize: 10, wordBreak: 'break-all' }}>{selected.sha256}</div></div>}
+              {selected.sha256 && (
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <span style={{ color: 'var(--text3)' }}>SHA256</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ fontFamily: 'monospace', fontSize: 10, wordBreak: 'break-all', flex: 1 }}>{selected.sha256}</div>
+                    <button className="btn btn-secondary btn-sm" onClick={() => setOsintTarget({ type: 'hash', value: selected.sha256 })}>🔍 OSINT</button>
+                  </div>
+                </div>
+              )}
               <div><span style={{ color: 'var(--text3)' }}>MITRE Tactic</span><div>{selected.mitre_tactic || '—'}</div></div>
               <div><span style={{ color: 'var(--text3)' }}>MITRE Technique</span><div style={{ fontFamily: 'monospace' }}>{selected.mitre_technique || '—'}</div></div>
               <div style={{ gridColumn: '1 / -1' }}><span style={{ color: 'var(--text3)' }}>Timestamp</span><div>{new Date(selected.timestamp).toLocaleString()}</div></div>
@@ -163,6 +173,10 @@ export default function ProcessTree() {
           </div>
         )}
       </div>
+
+      {osintTarget && (
+        <OsintPanel type={osintTarget.type} value={osintTarget.value} onClose={() => setOsintTarget(null)} />
+      )}
     </div>
   );
 }

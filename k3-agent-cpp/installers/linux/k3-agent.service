@@ -1,0 +1,15 @@
+[Unit]
+Description=K3 SIEM Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/k3-agent/k3-agent /opt/k3-agent/config.yaml
+WorkingDirectory=/opt/k3-agent
+Restart=on-failure
+RestartSec=15
+User=root
+
+[Install]
+WantedBy=multi-user.target

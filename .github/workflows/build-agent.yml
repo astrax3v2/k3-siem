@@ -1,0 +1,100 @@
+name: Build k3-agent-cpp
+
+# Builds the native agent + installer on each OS's own runner — this is the actual mechanism
+# that produces the .exe/.bin/.dmg artifacts. Windows can't cross-compile a real macOS .dmg,
+# macOS can't produce a signed-ready Windows Service .exe, and neither can produce a proper
+# Linux self-extracting .bin, so each platform builds on its own native runner rather than
+# attempting any cross-compilation.
+on:
+  push:
+    branches: [main]
+    paths: ['k3-agent-cpp/**', '.github/workflows/build-agent.yml']
+  pull_request:
+    paths: ['k3-agent-cpp/**', '.github/workflows/build-agent.yml']
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: k3-agent-cpp
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install curl via vcpkg
+        run: |
+          vcpkg install curl:x64-windows
+        shell: pwsh
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
+        shell: pwsh
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Flatten build output
+        # The NSIS script expects build/k3-agent.exe regardless of which generator/config
+        # subdirectory MSVC placed it in.
+        run: |
+          if (Test-Path build/Release/k3-agent.exe) { Copy-Item build/Release/k3-agent.exe build/k3-agent.exe }
+        shell: pwsh
+
+      - name: Install NSIS
+        run: choco install nsis -y
+        shell: pwsh
+
+      - name: Build installer
+        run: & "C:\Program Files (x86)\NSIS\makensis.exe" installers\windows\agent.nsi
+        shell: pwsh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: k3-agent-windows
+          path: k3-agent-cpp/installers/windows/k3-agent-setup.exe
+
+  linux:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: k3-agent-cpp
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev libsystemd-dev makeself
+
+      - name: Configure and build
+        run: |
+          cmake -S . -B build
+          cmake --build build
+
+      - name: Build installer
+        run: installers/linux/build-bin.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: k3-agent-linux
+          path: k3-agent-cpp/k3-agent-linux.bin
+
+  macos:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: k3-agent-cpp
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure and build
+        run: |
+          cmake -S . -B build
+          cmake --build build
+
+      - name: Build installer
+        run: installers/macos/build-dmg.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: k3-agent-macos
+          path: k3-agent-cpp/k3-agent-macos.dmg
