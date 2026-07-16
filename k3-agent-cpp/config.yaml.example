@@ -1,0 +1,12 @@
+siem_url: http://localhost:3001
+api_key: k3-siem-local-dev-ingest-key-change-in-production
+agent_version: "1.0.0-cpp"
+
+collection_interval: 10
+heartbeat_interval: 30
+batch_size: 50
+
+# Leave empty to use the platform default set (see main.cpp defaultSources()).
+sources:
+
+vuln_scan_enabled: false

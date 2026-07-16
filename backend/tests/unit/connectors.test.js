@@ -11,6 +11,7 @@ describe('connector isConfigured() gating', () => {
     delete process.env.JIRA_BASE_URL;
     delete process.env.VIRUSTOTAL_API_KEY;
     delete process.env.ABUSEIPDB_API_KEY;
+    delete process.env.SHODAN_API_KEY;
   });
 
   afterAll(() => { process.env = ORIGINAL_ENV; });
@@ -41,5 +42,26 @@ describe('connector isConfigured() gating', () => {
   test('virustotal lookupIp returns null when not configured (no network call)', async () => {
     const vt = require('../../src/services/connectors/virustotal');
     await expect(vt.lookupIp('8.8.8.8')).resolves.toBeNull();
+  });
+
+  test('virustotal lookupDomain returns null when not configured (no network call)', async () => {
+    const vt = require('../../src/services/connectors/virustotal');
+    await expect(vt.lookupDomain('example.com')).resolves.toBeNull();
+  });
+
+  test('shodan reports not configured without an api key', () => {
+    const shodan = require('../../src/services/connectors/shodan');
+    expect(shodan.isConfigured()).toBe(false);
+  });
+
+  test('shodan lookupIp returns null when not configured (no network call)', async () => {
+    const shodan = require('../../src/services/connectors/shodan');
+    await expect(shodan.lookupIp('8.8.8.8')).resolves.toBeNull();
+  });
+
+  test('shodan reports configured once an api key is set', () => {
+    process.env.SHODAN_API_KEY = 'test-key';
+    const shodan = require('../../src/services/connectors/shodan');
+    expect(shodan.isConfigured()).toBe(true);
   });
 });

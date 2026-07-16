@@ -153,9 +153,53 @@ async function deployViaSSH(deployId, config) {
   });
 }
 
-function generateInstallScript(os, siemUrl, apiKey) {
+// Native-agent (k3-agent-cpp) installer download filenames, keyed by target OS. These are
+// produced by .github/workflows/build-agent.yml on each OS's own runner — this backend never
+// builds them itself, it only serves whatever artifact has been dropped into k3-agent-cpp/dist/
+// (see the /download/:filename route in routes/deploy.js).
+const NATIVE_INSTALLER_FILENAMES = {
+  windows: 'k3-agent-setup.exe',
+  linux: 'k3-agent-linux.bin',
+  macos: 'k3-agent-macos.dmg',
+};
+
+function generateNativeInstallScript(os, url, key) {
+  const filename = NATIVE_INSTALLER_FILENAMES[os];
+  const downloadUrl = `${url}/api/deploy/download/${filename}`;
+
+  if (os === 'linux') {
+    return `#!/bin/bash
+set -e
+echo "[K3 Agent (native)] Downloading installer..."
+curl -sSL ${downloadUrl} -o k3-agent-linux.bin
+chmod +x k3-agent-linux.bin
+sudo ./k3-agent-linux.bin -- --siem-url "${url}" --api-key "${key}"
+`;
+  }
+  if (os === 'macos') {
+    return `#!/bin/bash
+set -e
+echo "[K3 Agent (native)] Downloading installer..."
+curl -sSL ${downloadUrl} -o k3-agent-macos.dmg
+MOUNT_DIR=$(hdiutil attach k3-agent-macos.dmg -nobrowse | tail -1 | awk '{print $NF}')
+printf 'SIEM_URL=%s\\nAPI_KEY=%s\\n' "${url}" "${key}" | sudo tee /tmp/k3-agent-install.env > /dev/null
+sudo installer -pkg "$MOUNT_DIR/k3-agent.pkg" -target /
+hdiutil detach "$MOUNT_DIR"
+`;
+  }
+  return `# K3 SIEM Agent Installer (native, PowerShell)
+Write-Host "[K3 Agent (native)] Downloading installer..."
+Invoke-WebRequest -Uri "${downloadUrl}" -OutFile k3-agent-setup.exe
+Start-Process -FilePath .\\k3-agent-setup.exe -ArgumentList "/S", "/SIEMURL=${url}", "/APIKEY=${key}" -Verb RunAs -Wait
+Write-Host "[K3 Agent (native)] Installed as a Windows Service (K3Agent)"
+`;
+}
+
+function generateInstallScript(os, siemUrl, apiKey, variant = 'python') {
   const url = siemUrl || `http://localhost:${process.env.PORT || 3001}`;
   const key = apiKey || INGEST_API_KEY;
+
+  if (variant === 'native') return generateNativeInstallScript(os, url, key);
 
   if (os === 'linux' || os === 'macos') {
     return `#!/bin/bash
@@ -219,4 +263,4 @@ Write-Host "[K3 Agent] Started successfully"
 `;
 }
 
-module.exports = { deployViaSSH, generateInstallScript, getAgentFiles };
+module.exports = { deployViaSSH, generateInstallScript, getAgentFiles, NATIVE_INSTALLER_FILENAMES };

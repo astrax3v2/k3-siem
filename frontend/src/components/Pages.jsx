@@ -106,7 +106,9 @@ export function EventExplorer({ liveEvents }) {
 // ── Correlation Engine ──────────────────────────────────────────────────────
 export function Correlation() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [rules, setRules] = useState([]);
+  const [crossHits, setCrossHits] = useState(0);
   const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState({ name: '', logic: '', severity: 'High', risk_score: 80, window_minutes: 5 });
@@ -114,6 +116,7 @@ export function Correlation() {
 
   useEffect(() => {
     correlationApi.rules().then(r => { setRules(r.data.rules); setLoading(false); });
+    correlationApi.crossHits().then(r => setCrossHits(r.data.count));
   }, []);
 
   const toggle = async (rule) => {
@@ -131,13 +134,17 @@ export function Correlation() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
         {[{ l: 'Active Rules', v: rules.filter(r => r.enabled).length, c: '#68d391' }, { l: 'Total Hits (All Time)', v: rules.reduce((s, r) => s + r.hit_count, 0), c: '#f6ad55' }, { l: 'Multi-Index Rules', v: rules.filter(r => { try { return JSON.parse(r.indices || '[]').length > 1; } catch { return false; } }).length, c: '#90cdf4' }].map(s => (
           <div key={s.l} className="card" style={{ textAlign: 'center' }}>
             <div style={{ fontSize: 26, fontWeight: 700, color: s.c }}>{s.v}</div>
             <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 4 }}>{s.l}</div>
           </div>
         ))}
+        <div className="card" style={{ textAlign: 'center', cursor: 'pointer' }} onClick={() => navigate('/incidents')} title="Incidents auto-created by correlating multiple alerts across rules for the same user/IP/asset">
+          <div style={{ fontSize: 26, fontWeight: 700, color: '#b794f4' }}>{crossHits}</div>
+          <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 4 }}>Cross-Correlated Incidents (24h)</div>
+        </div>
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

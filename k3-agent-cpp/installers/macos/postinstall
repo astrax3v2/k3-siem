@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# pkgbuild postinstall script — runs as root after the .pkg payload (the k3-agent binary) has
+# been laid down at /opt/k3-agent/k3-agent. Registers a launchd LaunchDaemon (auto-start,
+# keeps it running) — service registration only, no other system policy changes.
+#
+# `installer(8)` has no first-class way to pass custom install-time flags the way NSIS's
+# /SIEMURL= or the Linux .bin's --siem-url do, so a deploying script should drop
+# /tmp/k3-agent-install.env (SIEM_URL=... / API_KEY=...) before running `installer -pkg`.
+# Falls back to localhost + a warning if that file isn't present, same fail-safe behavior as
+# the other two installers.
+set -euo pipefail
+
+INSTALL_DIR="/opt/k3-agent"
+SIEM_URL="http://localhost:3001"
+API_KEY=""
+
+if [ -f /tmp/k3-agent-install.env ]; then
+  # shellcheck disable=SC1091
+  source /tmp/k3-agent-install.env
+  rm -f /tmp/k3-agent-install.env
+else
+  echo "Warning: /tmp/k3-agent-install.env not found — using defaults. Edit $INSTALL_DIR/config.yaml and run 'launchctl kickstart -k system/com.k3siem.agent' afterward." >&2
+fi
+
+cat > "$INSTALL_DIR/config.yaml" <<EOF
+siem_url: ${SIEM_URL}
+api_key: ${API_KEY}
+agent_version: "1.0.0-cpp"
+collection_interval: 10
+heartbeat_interval: 30
+batch_size: 50
+vuln_scan_enabled: true
+EOF
+chmod 600 "$INSTALL_DIR/config.yaml"
+chmod 755 "$INSTALL_DIR/k3-agent"
+
+cat > /Library/LaunchDaemons/com.k3siem.agent.plist <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.k3siem.agent</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${INSTALL_DIR}/k3-agent</string>
+    <string>${INSTALL_DIR}/config.yaml</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>${INSTALL_DIR}</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/var/log/k3-agent.log</string>
+  <key>StandardErrorPath</key>
+  <string>/var/log/k3-agent.err.log</string>
+</dict>
+</plist>
+EOF
+chmod 644 /Library/LaunchDaemons/com.k3siem.agent.plist
+chown root:wheel /Library/LaunchDaemons/com.k3siem.agent.plist
+
+launchctl bootstrap system /Library/LaunchDaemons/com.k3siem.agent.plist 2>/dev/null || launchctl load /Library/LaunchDaemons/com.k3siem.agent.plist
+
+exit 0

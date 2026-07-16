@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { alertsApi, incidentsApi } from '../../services/api';
+import OsintPanel from '../OSINT/OsintPanel';
 
 const SEV = { Critical: 'badge-red', High: 'badge-orange', Medium: 'badge-blue', Low: 'badge-green' };
 const STA = { New: 'badge-red', 'In Progress': 'badge-orange', Assigned: 'badge-blue', Closed: 'badge-gray' };
@@ -22,6 +23,7 @@ export default function AlertManager({ liveAlerts }) {
   });
   const [updating, setUpdating] = useState(false);
   const [creatingIncident, setCreatingIncident] = useState(false);
+  const [osintTarget, setOsintTarget] = useState(null);
 
   // Keep the URL in sync so filtered/selected views from dashboards are shareable and bookmarkable.
   useEffect(() => {
@@ -197,6 +199,12 @@ export default function AlertManager({ liveAlerts }) {
             <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
               <button className="btn btn-primary btn-sm" disabled={creatingIncident} onClick={() => createIncidentFromAlert(detail.id)}>Create Incident</button>
               <button className="btn btn-secondary btn-sm" onClick={() => navigate('/incidents')}>Open Incidents</button>
+              {detail.ip_address && (
+                <button className="btn btn-secondary btn-sm" onClick={() => setOsintTarget({ type: 'ip', value: detail.ip_address })}>🔍 OSINT: IP</button>
+              )}
+              {detail.username && detail.username.includes('@') && (
+                <button className="btn btn-secondary btn-sm" onClick={() => setOsintTarget({ type: 'email', value: detail.username })}>🔍 OSINT: Email</button>
+              )}
             </div>
             <div style={{ marginTop: 12 }}>
               <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 6 }}>Update Status</div>
@@ -210,6 +218,10 @@ export default function AlertManager({ liveAlerts }) {
             </div>
           </div>
         </div>
+      )}
+
+      {osintTarget && (
+        <OsintPanel type={osintTarget.type} value={osintTarget.value} onClose={() => setOsintTarget(null)} />
       )}
     </div>
   );

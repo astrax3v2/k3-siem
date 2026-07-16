@@ -5,7 +5,7 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { db } = require('../models/db');
 const { authenticate, authorize } = require('../middleware/auth');
-const { deployViaSSH, generateInstallScript, getAgentFiles } = require('../services/deployer');
+const { deployViaSSH, generateInstallScript, getAgentFiles, NATIVE_INSTALLER_FILENAMES } = require('../services/deployer');
 const { INGEST_API_KEY } = require('../config');
 const { logAction } = require('../services/audit');
 const router = express.Router();
@@ -36,8 +36,9 @@ router.get('/', authenticate, async (req, res) => {
 
 router.get('/script/:os', authenticate, async (req, res) => {
   const { os } = req.params;
+  const variant = req.query.variant === 'native' ? 'native' : 'python';
   const siemUrl = req.query.siem_url || process.env.SIEM_PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
-  const script = generateInstallScript(os, siemUrl, INGEST_API_KEY);
+  const script = generateInstallScript(os, siemUrl, INGEST_API_KEY, variant);
   res.type('text/plain').send(script);
 });
 
@@ -45,12 +46,26 @@ router.get('/script/:os', authenticate, async (req, res) => {
 // install script above does embed the real ingest key, so keep this whole namespace gated.
 router.get('/download/:filename', authenticate, (req, res) => {
   const { filename } = req.params;
-  const allowed = ['agent.py', 'requirements.txt', 'config.yaml'];
-  if (!allowed.includes(filename)) return res.status(404).json({ error: 'File not found' });
+  const pythonFiles = ['agent.py', 'requirements.txt', 'config.yaml'];
+  const nativeFiles = Object.values(NATIVE_INSTALLER_FILENAMES);
 
-  const filePath = path.resolve(__dirname, '../../../k3-agent', filename);
-  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
-  res.sendFile(filePath);
+  if (pythonFiles.includes(filename)) {
+    const filePath = path.resolve(__dirname, '../../../k3-agent', filename);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
+    return res.sendFile(filePath);
+  }
+
+  if (nativeFiles.includes(filename)) {
+    // Built by .github/workflows/build-agent.yml on each OS's own runner, not by this
+    // backend — 404 with a pointer to the workflow if the artifact hasn't been dropped in yet.
+    const filePath = path.resolve(__dirname, '../../../k3-agent-cpp/dist', filename);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: `${filename} has not been built yet — run the "Build k3-agent-cpp" GitHub Actions workflow and place its artifact in k3-agent-cpp/dist/.` });
+    }
+    return res.sendFile(filePath);
+  }
+
+  return res.status(404).json({ error: 'File not found' });
 });
 
 router.get('/:id', authenticate, async (req, res) => {

@@ -7,6 +7,7 @@ const { runStep } = require('../services/connectors');
 const { logAction } = require('../services/audit');
 const { computeSla } = require('../services/slaPolicy');
 const { isAdmin, alertTeamJoin, scopeClause, guardTeamAccess } = require('../services/teamScope');
+const { countRecent: countRecentCrossCorrelation } = require('../services/crossCorrelation');
 const router = express.Router();
 
 const withSla = (row) => (row ? { ...row, sla: computeSla(row) } : row);
@@ -134,6 +135,10 @@ router.get('/intel/feeds', authenticate, async (req, res) => {
 // ── CORRELATION ────────────────────────────────────────────────────────────
 router.get('/correlation/rules', authenticate, async (req, res) => {
   res.json({ rules: await db().prepare('SELECT * FROM correlation_rules ORDER BY risk_score DESC').all() });
+});
+
+router.get('/correlation/cross-hits', authenticate, async (req, res) => {
+  res.json({ count: await countRecentCrossCorrelation() });
 });
 
 router.patch('/correlation/rules/:id', authenticate, authorize(ROLE_T2, ROLE_ADMIN), async (req, res) => {

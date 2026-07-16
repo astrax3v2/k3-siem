@@ -51,6 +51,7 @@ export const correlationApi = {
   rules: () => api.get('/correlation/rules'),
   toggleRule: (id, enabled) => api.patch(`/correlation/rules/${id}`, { enabled }),
   createRule: (data) => api.post('/correlation/rules', data),
+  crossHits: () => api.get('/correlation/cross-hits'),
 };
 
 export const soarApi = {
@@ -82,7 +83,7 @@ export const deployApi = {
   create: (data) => api.post('/deploy', data),
   list: () => api.get('/deploy'),
   get: (id) => api.get(`/deploy/${id}`),
-  script: (os) => api.get(`/deploy/script/${os}`, { responseType: 'text' }),
+  script: (os, variant = 'python') => api.get(`/deploy/script/${os}`, { params: { variant }, responseType: 'text' }),
 };
 
 export const assetsApi = {
@@ -122,6 +123,13 @@ export const incidentsApi = {
   update: (id, data) => api.patch(`/incidents/${id}`, data),
   addNote: (id, note) => api.post(`/incidents/${id}/notes`, { note }),
   linkAlert: (id, alertId) => api.post(`/incidents/${id}/alerts`, { alert_id: alertId }),
+};
+
+export const osintApi = {
+  lookupIp: (ip) => api.get('/osint/ip', { params: { ip } }),
+  lookupDomain: (domain) => api.get('/osint/domain', { params: { domain } }),
+  lookupHash: (hash) => api.get('/osint/hash', { params: { hash } }),
+  lookupEmail: (email) => api.get('/osint/email', { params: { email } }),
 };
 
 export const teamsApi = {

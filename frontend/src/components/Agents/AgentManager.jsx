@@ -26,6 +26,7 @@ export default function AgentManager() {
   const [deployments, setDeployments] = useState([]);
   const [deployTab, setDeployTab] = useState('ssh');
   const [installScript, setInstallScript] = useState('');
+  const [agentVariant, setAgentVariant] = useState('python');
 
   const fetchAgents = useCallback(async () => {
     try {
@@ -73,8 +74,8 @@ export default function AgentManager() {
     finally { setDeploying(false); }
   };
 
-  const loadScript = async (os) => {
-    try { const r = await deployApi.script(os); setInstallScript(typeof r.data === 'string' ? r.data : JSON.stringify(r.data)); } catch {}
+  const loadScript = async (os, variant = agentVariant) => {
+    try { const r = await deployApi.script(os, variant); setInstallScript(typeof r.data === 'string' ? r.data : JSON.stringify(r.data)); } catch {}
   };
 
   const deleteAgent = async (id) => {
@@ -134,8 +135,18 @@ export default function AgentManager() {
             ) : (
               <div>
                 <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                  {[['python', 'Python agent'], ['native', 'Native agent (C++)']].map(([v, label]) => (
+                    <button key={v} className={`btn btn-sm ${agentVariant === v ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setAgentVariant(v)}>{label}</button>
+                  ))}
+                </div>
+                {agentVariant === 'native' && (
+                  <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 8 }}>
+                    Native installers are built by the "Build k3-agent-cpp" GitHub Actions workflow — run it (or download its artifacts) before using this script.
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
                   {['linux', 'macos', 'windows'].map(os => (
-                    <button key={os} className="btn btn-secondary btn-sm" onClick={() => loadScript(os)}>{os === 'linux' ? '🐧' : os === 'macos' ? '🍎' : '🪟'} {os}</button>
+                    <button key={os} className="btn btn-secondary btn-sm" onClick={() => loadScript(os, agentVariant)}>{os === 'linux' ? '🐧' : os === 'macos' ? '🍎' : '🪟'} {os}</button>
                   ))}
                 </div>
                 <pre style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 6, padding: 12, fontSize: 11, color: '#68d391', maxHeight: 200, overflow: 'auto', whiteSpace: 'pre-wrap', cursor: 'pointer' }}
