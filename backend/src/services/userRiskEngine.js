@@ -5,7 +5,8 @@
 // analysts need to understand *why* a score fired.
 const cron = require('node-cron');
 const { v4: uuidv4 } = require('uuid');
-const { db, sqlNow, sqlNowMinus, sqlDate } = require('../models/db');
+const { db, sqlNow } = require('../models/db');
+const { chQuery, chNowMinus, chDate } = require('../models/clickhouse');
 const { lookupGeo, haversineKm } = require('./geoip');
 
 let task = null;
@@ -18,10 +19,11 @@ const stddev = (arr) => {
   return Math.sqrt(mean(arr.map((x) => (x - m) ** 2)));
 };
 
-async function loginTimeAnomaly(d, username) {
-  const baseline = await d.prepare(
-    `SELECT timestamp FROM events WHERE username = ? AND ${LOGON_COND} AND timestamp < ${sqlNowMinus(1, 'day')} AND timestamp >= ${sqlNowMinus(30, 'day')}`
-  ).all(username);
+async function loginTimeAnomaly(username) {
+  const baseline = await chQuery(
+    `SELECT timestamp FROM events WHERE username = {username:String} AND ${LOGON_COND} AND timestamp < ${chNowMinus(1, 'day')} AND timestamp >= ${chNowMinus(30, 'day')}`,
+    { username }
+  );
   if (baseline.length < 5) return false; // not enough history to baseline confidently
 
   const hourCounts = new Array(24).fill(0);
@@ -29,16 +31,18 @@ async function loginTimeAnomaly(d, username) {
   const total = baseline.length;
   const normalHours = new Set(hourCounts.map((c, h) => ({ c, h })).filter((x) => x.c / total >= 0.04).map((x) => x.h));
 
-  const recent = await d.prepare(
-    `SELECT timestamp FROM events WHERE username = ? AND ${LOGON_COND} AND timestamp >= ${sqlNowMinus(1, 'day')}`
-  ).all(username);
+  const recent = await chQuery(
+    `SELECT timestamp FROM events WHERE username = {username:String} AND ${LOGON_COND} AND timestamp >= ${chNowMinus(1, 'day')}`,
+    { username }
+  );
   return recent.some((r) => !normalHours.has(new Date(r.timestamp).getUTCHours()));
 }
 
-async function geoVelocityAnomaly(d, username) {
-  const logins = await d.prepare(
-    `SELECT timestamp, ip_address FROM events WHERE username = ? AND ip_address IS NOT NULL AND timestamp >= ${sqlNowMinus(7, 'day')} ORDER BY timestamp DESC LIMIT 8`
-  ).all(username);
+async function geoVelocityAnomaly(username) {
+  const logins = await chQuery(
+    `SELECT timestamp, ip_address FROM events WHERE username = {username:String} AND ip_address IS NOT NULL AND timestamp >= ${chNowMinus(7, 'day')} ORDER BY timestamp DESC LIMIT 8`,
+    { username }
+  );
   for (let i = 0; i < logins.length - 1; i++) {
     const a = logins[i], b = logins[i + 1];
     if (a.ip_address === b.ip_address) continue;
@@ -52,13 +56,14 @@ async function geoVelocityAnomaly(d, username) {
   return false;
 }
 
-async function dataVolumeZ(d, username, recentCount) {
-  const rows = await d.prepare(
-    `SELECT ${sqlDate('timestamp')} as day, COUNT(*) as cnt FROM events
-     WHERE username = ? AND timestamp >= ${sqlNowMinus(30, 'day')} AND timestamp < ${sqlNowMinus(1, 'day')}
-     GROUP BY ${sqlDate('timestamp')}`
-  ).all(username);
-  const counts = rows.map((r) => r.cnt);
+async function dataVolumeZ(username, recentCount) {
+  const rows = await chQuery(
+    `SELECT ${chDate('timestamp')} as day, COUNT(*) as cnt FROM events
+     WHERE username = {username:String} AND timestamp >= ${chNowMinus(30, 'day')} AND timestamp < ${chNowMinus(1, 'day')}
+     GROUP BY ${chDate('timestamp')}`,
+    { username }
+  );
+  const counts = rows.map((r) => Number(r.cnt));
   if (counts.length < 3) return 0;
   const m = mean(counts), sd = stddev(counts);
   if (sd === 0) return recentCount > m ? 3 : 0;
@@ -67,15 +72,15 @@ async function dataVolumeZ(d, username, recentCount) {
 
 async function runOnce() {
   const d = db();
-  const active = await d.prepare(
-    `SELECT DISTINCT username FROM events WHERE username IS NOT NULL AND timestamp >= ${sqlNowMinus(30, 'day')}`
-  ).all();
+  const active = await chQuery(
+    `SELECT DISTINCT username FROM events WHERE username IS NOT NULL AND timestamp >= ${chNowMinus(30, 'day')}`
+  );
   if (!active.length) return;
 
-  const recentRows = await d.prepare(
-    `SELECT username, COUNT(*) as cnt FROM events WHERE username IS NOT NULL AND timestamp >= ${sqlNowMinus(1, 'day')} GROUP BY username`
-  ).all();
-  const recentCountByUser = Object.fromEntries(recentRows.map((r) => [r.username, r.cnt]));
+  const recentRows = await chQuery(
+    `SELECT username, COUNT(*) as cnt FROM events WHERE username IS NOT NULL AND timestamp >= ${chNowMinus(1, 'day')} GROUP BY username`
+  );
+  const recentCountByUser = Object.fromEntries(recentRows.map((r) => [r.username, Number(r.cnt)]));
 
   const existing = await d.prepare('SELECT username, department, location FROM ueba_scores').all();
   const deptByUser = Object.fromEntries(existing.map((r) => [r.username, r.department || 'Unknown']));
@@ -97,8 +102,8 @@ async function runOnce() {
       const flags = [];
       let maxAbsZ = 0;
 
-      if (await loginTimeAnomaly(d, username)) flags.push('Login Time Anomaly');
-      if (await geoVelocityAnomaly(d, username)) flags.push('Geo-Velocity');
+      if (await loginTimeAnomaly(username)) flags.push('Login Time Anomaly');
+      if (await geoVelocityAnomaly(username)) flags.push('Geo-Velocity');
 
       const dept = deptByUser[username] || 'Unknown';
       const peer = peerStatsByDept[dept] || { mean: 0, sd: 0 };
@@ -106,7 +111,7 @@ async function runOnce() {
       if (peerZ > 2) flags.push('Peer Group Deviation');
       maxAbsZ = Math.max(maxAbsZ, Math.abs(peerZ));
 
-      const volZ = await dataVolumeZ(d, username, recentCount);
+      const volZ = await dataVolumeZ(username, recentCount);
       if (volZ > 2) flags.push('Data Volume Spike');
       maxAbsZ = Math.max(maxAbsZ, Math.abs(volZ));
 

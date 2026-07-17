@@ -15,10 +15,32 @@ services:
       retries: 20
     restart: unless-stopped
 
+  clickhouse:
+    image: clickhouse/clickhouse-server:24-alpine
+    environment:
+      CLICKHOUSE_DB: k3_siem
+      CLICKHOUSE_USER: k3
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?Set CLICKHOUSE_PASSWORD in .env (see .env.example)}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:8123/ping || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
   app:
     build: .
     depends_on:
       db:
+        condition: service_healthy
+      clickhouse:
         condition: service_healthy
     ports:
       - "3001:3001"
@@ -26,6 +48,11 @@ services:
       NODE_ENV: production
       DB_CLIENT: postgres
       DATABASE_URL: postgresql://k3:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/k3_siem
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: k3
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?Set CLICKHOUSE_PASSWORD in .env}
+      CLICKHOUSE_DB: k3_siem
+      EVENTS_RETENTION_DAYS: ${EVENTS_RETENTION_DAYS:-90}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env (see .env.example) — generate one with `openssl rand -base64 48`}
       INGEST_API_KEY: ${INGEST_API_KEY:?Set INGEST_API_KEY in .env (see .env.example) — generate one with `openssl rand -hex 32`}
       CORS_ORIGIN: ${CORS_ORIGIN:?Set CORS_ORIGIN in .env to your real frontend origin, e.g. https://siem.example.com}
@@ -119,3 +146,4 @@ services:
 
 volumes:
   postgres_data:
+  clickhouse_data:

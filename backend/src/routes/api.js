@@ -2,6 +2,7 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { db, getDialect, sqlNow, sqlNowMinus, sqlDate } = require('../models/db');
+const { chQuery, chNowMinus } = require('../models/clickhouse');
 const { authenticate, authorize, ROLE_ADMIN, ROLE_T1, ROLE_T2 } = require('../middleware/auth');
 const { runStep } = require('../services/connectors');
 const { logAction } = require('../services/audit');
@@ -17,9 +18,8 @@ const ALERT_TEAM_SELECT = `a.*, ag.team_id as team_id, t.name as team_name FROM 
 router.get('/dashboard/stats', authenticate, async (req, res) => {
   const d = db();
   const last24hAlertsExpr = sqlNowMinus(1, 'day');
-  const last24hEventsExpr = sqlNowMinus(1, 'day');
   const alerts = await d.prepare(`SELECT COUNT(*) as total, SUM(CASE WHEN severity='Critical' THEN 1 ELSE 0 END) as critical, SUM(CASE WHEN status NOT IN ('Closed') THEN 1 ELSE 0 END) as open FROM alerts WHERE created_at >= ${last24hAlertsExpr}`).get();
-  const eventCount = (await d.prepare(`SELECT COUNT(*) as cnt FROM events WHERE timestamp >= ${last24hEventsExpr}`).get()).cnt;
+  const eventCount = (await chQuery(`SELECT COUNT(*) as cnt FROM events WHERE timestamp >= ${chNowMinus(1, 'day')}`))[0].cnt;
   const uebaHigh  = (await d.prepare('SELECT COUNT(*) as cnt FROM ueba_scores WHERE risk_score > 70').get()).cnt;
   const soarRuns  = (await d.prepare('SELECT COALESCE(SUM(execution_count),0) as cnt FROM playbooks').get()).cnt;
   const iocHits   = (await d.prepare('SELECT COALESCE(SUM(hits),0) as cnt FROM iocs').get()).cnt;
@@ -329,7 +329,7 @@ router.get('/incidents/:id', authenticate, async (req, res) => {
     ORDER BY a.created_at DESC
   `).all(req.params.id);
   const notes = await d.prepare('SELECT * FROM incident_notes WHERE incident_id = ? ORDER BY created_at DESC').all(req.params.id);
-  const processTree = await d.prepare('SELECT * FROM process_nodes WHERE incident_id = ? ORDER BY sequence').all(req.params.id);
+  const processTree = await chQuery('SELECT * FROM process_nodes WHERE incident_id = {incident_id:String} ORDER BY sequence', { incident_id: req.params.id });
   res.json({ incident: withSla(incident), alerts, notes, process_tree: processTree });
 });
 
@@ -398,9 +398,8 @@ router.post('/incidents/:id/alerts', authenticate, authorize(ROLE_T1, ROLE_T2, R
 router.get('/audit', authenticate, authorize(ROLE_ADMIN), async (req, res) => {
   const { page = 1, limit = 50 } = req.query;
   const offset = (parseInt(page) - 1) * parseInt(limit);
-  const d = db();
-  const total = (await d.prepare('SELECT COUNT(*) as cnt FROM audit_log').get())?.cnt || 0;
-  const entries = await d.prepare('SELECT * FROM audit_log ORDER BY created_at DESC LIMIT ? OFFSET ?').all(parseInt(limit), offset);
+  const total = (await chQuery('SELECT COUNT(*) as cnt FROM audit_log'))[0]?.cnt || 0;
+  const entries = await chQuery('SELECT * FROM audit_log ORDER BY created_at DESC LIMIT {limit:UInt32} OFFSET {offset:UInt32}', { limit: parseInt(limit), offset });
   res.json({ entries, total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) });
 });
 

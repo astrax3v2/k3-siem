@@ -3,6 +3,7 @@ require('dotenv').config();
 const { v4: uuidv4 } = require('uuid');
 const bcrypt = require('bcryptjs');
 const { db, initDb, getDialect } = require('../models/db');
+const { chInsert, chExec, initClickHouse } = require('../models/clickhouse');
 
 const rand = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
@@ -24,12 +25,16 @@ const ATITLES   = ['Brute Force Attack Detected','Lateral Movement via RDP','Sus
 
 async function seed() {
   await initDb();
+  await initClickHouse();
   const d = db();
 
   await d.exec(`DELETE FROM playbook_executions; DELETE FROM ueba_scores; DELETE FROM kql_saved_queries;
-          DELETE FROM intel_feeds; DELETE FROM process_nodes; DELETE FROM incident_alerts; DELETE FROM incident_notes; DELETE FROM incidents; DELETE FROM iocs; DELETE FROM alerts; DELETE FROM events;
+          DELETE FROM intel_feeds; DELETE FROM incident_alerts; DELETE FROM incident_notes; DELETE FROM incidents; DELETE FROM iocs; DELETE FROM alerts;
           DELETE FROM playbooks; DELETE FROM correlation_rules; DELETE FROM users; DELETE FROM teams;
           DELETE FROM assets; DELETE FROM agents;`);
+  await chExec('TRUNCATE TABLE events');
+  await chExec('TRUNCATE TABLE process_nodes');
+  await chExec('TRUNCATE TABLE audit_log');
   console.log('[Seed] Cleared');
 
   // Teams — team-scoped RBAC (see services/teamScope.js): analysts only see their team's
@@ -53,16 +58,15 @@ async function seed() {
   console.log('[Seed] Users: 4');
 
   // Events - 500 rows
-  const insE = d.prepare(`INSERT INTO events(id,timestamp,source,event_id,computer,username,ip_address,action,severity,raw_log,index_name,agent_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`);
-  const insertEvents = d.transaction(async (rows) => { for (const r of rows) await insE.run(...r); });
   const evtRows = Array.from({length:500}, () => {
     const sev=pick(SEVS), src=pick(SOURCES), comp=pick(COMPUTERS), user=pick(USERS);
     const ip=`${rand(10,192)}.${rand(1,254)}.${rand(1,254)}.${rand(1,254)}`;
     const action=pick(ACTIONS), eid=pick(EIDS), ts=ago(rand(0,86400000));
     const idx=pick(INDICES);
-    return [uuidv4(),ts,src,eid,comp,user,ip,action,sev,JSON.stringify({EventID:eid,Computer:comp,User:user,IP:ip}),idx,null];
+    return { id:uuidv4(), timestamp:ts, source:src, event_id:eid, computer:comp, username:user, ip_address:ip,
+      action, severity:sev, raw_log:JSON.stringify({EventID:eid,Computer:comp,User:user,IP:ip}), index_name:idx, agent_id:null };
   });
-  await insertEvents(evtRows);
+  await chInsert('events', evtRows);
   console.log('[Seed] Events: 500');
 
   // Alerts - 60 rows
@@ -115,8 +119,6 @@ async function seed() {
 
   // IR-007: Dedicated process-tree demo incident — full phishing-to-ransomware attack chain
   const insIncFull = d.prepare(`INSERT INTO incidents(id,title,description,severity,status,priority,owner,tags,impact,remediation,lessons_learned,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`);
-  const insProc = d.prepare(`INSERT INTO process_nodes(id,incident_id,parent_id,sequence,pid,ppid,process_name,image,command_line,hostname,username,sha256,event_type,mitre_tactic,mitre_technique,severity,is_malicious,first_detected_by,detection_rule,auto_analysis,impact,remediation,lessons_learned,timestamp) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
-  const insertProcNodes = d.transaction(async (rows) => { for (const r of rows) await insProc.run(...r); });
 
   const chainIncId = uuidv4();
   const chainStart = ago(3 * 86400000); // 3 days ago
@@ -181,13 +183,15 @@ async function seed() {
   ];
 
   const chainNodeIds = CHAIN.map(() => uuidv4());
-  await insertProcNodes(CHAIN.map((n, i) => [
-    chainNodeIds[i], chainIncId, n.parent === null ? null : chainNodeIds[n.parent], i + 1,
-    n.pid, n.ppid, n.name, n.image, n.cmd, chainHost, chainUser, n.hash || null, n.evt,
-    n.tactic, n.tech, n.sev, n.mal, n.detectedBy, n.rule, n.analysis, n.impact, n.remediation,
-    i === CHAIN.length - 1 ? 'Post-incident review found no single control would have stopped this chain; layered fixes (macro policy, LSASS hardening, segmentation, mail sandboxing) were required.' : null,
-    atTime(n.offset),
-  ]));
+  await chInsert('process_nodes', CHAIN.map((n, i) => ({
+    id: chainNodeIds[i], incident_id: chainIncId, parent_id: n.parent === null ? null : chainNodeIds[n.parent], sequence: i + 1,
+    pid: n.pid, ppid: n.ppid, process_name: n.name, image: n.image, command_line: n.cmd, hostname: chainHost,
+    username: chainUser, sha256: n.hash || null, event_type: n.evt, mitre_tactic: n.tactic, mitre_technique: n.tech,
+    severity: n.sev, is_malicious: n.mal, first_detected_by: n.detectedBy, detection_rule: n.rule, auto_analysis: n.analysis,
+    impact: n.impact, remediation: n.remediation,
+    lessons_learned: i === CHAIN.length - 1 ? 'Post-incident review found no single control would have stopped this chain; layered fixes (macro policy, LSASS hardening, segmentation, mail sandboxing) were required.' : null,
+    timestamp: atTime(n.offset),
+  })));
 
   await insIncFull.run(
     chainIncId,

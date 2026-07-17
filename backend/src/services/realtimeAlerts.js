@@ -1,13 +1,13 @@
 'use strict';
 const { v4: uuidv4 } = require('uuid');
-const { db, sqlNowMinus } = require('../models/db');
+const { db } = require('../models/db');
+const { chQuery, chNowMinus } = require('../models/clickhouse');
 
 async function buildRealtimeAlerts(event) {
   const alerts = [];
-  const d = db();
 
   if (event.event_id === '4625') {
-    const cnt = (await d.prepare(`SELECT COUNT(*) as cnt FROM events WHERE event_id='4625' AND username=? AND timestamp >= ${sqlNowMinus(5, 'minute')}`).get(event.username))?.cnt || 0;
+    const cnt = (await chQuery(`SELECT COUNT(*) as cnt FROM events WHERE event_id='4625' AND username={username:Nullable(String)} AND timestamp >= ${chNowMinus(5, 'minute')}`, { username: event.username ?? null }))[0]?.cnt || 0;
     if (cnt >= 3) {
       alerts.push({
         id: uuidv4(),

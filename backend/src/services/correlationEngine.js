@@ -6,6 +6,7 @@
 const cron = require('node-cron');
 const { v4: uuidv4 } = require('uuid');
 const { db, sqlNow, sqlNowMinus } = require('../models/db');
+const { chQuery, chNowMinus } = require('../models/clickhouse');
 
 let task = null;
 
@@ -40,24 +41,26 @@ async function evaluateRule(rule) {
   let indices = [];
   try { indices = JSON.parse(rule.indices || '[]'); } catch { /* none */ }
   const windowExpr = sqlNowMinus(rule.window_minutes || 5, 'minute');
+  const chWindowExpr = chNowMinus(rule.window_minutes || 5, 'minute');
 
-  const where = [`timestamp >= ${windowExpr}`];
-  const params = [];
-  if (cond.field === 'event_id') { where.push('event_id = ?'); params.push(cond.value); }
-  else if (cond.field === 'action') { where.push('action LIKE ?'); params.push(`%${cond.like}%`); }
+  const where = [`timestamp >= ${chWindowExpr}`];
+  const params = { threshold: rule.threshold || 1 };
+  if (cond.field === 'event_id') { where.push('event_id = {event_id:String}'); params.event_id = cond.value; }
+  else if (cond.field === 'action') { where.push('action ILIKE {action:String}'); params.action = `%${cond.like}%`; }
   else return;
 
   if (indices.length) {
-    where.push(`index_name IN (${indices.map(() => '?').join(',')})`);
-    params.push(...indices);
+    where.push(`index_name IN (${indices.map((_, i) => `{index_${i}:String}`).join(',')})`);
+    indices.forEach((idx, i) => { params[`index_${i}`] = idx; });
   }
 
-  const rows = await d.prepare(
+  const rows = await chQuery(
     `SELECT username, ip_address, computer, source, COUNT(*) as cnt
      FROM events WHERE ${where.join(' AND ')}
      GROUP BY username, ip_address, computer, source
-     HAVING COUNT(*) >= ?`
-  ).all(...params, rule.threshold || 1);
+     HAVING COUNT(*) >= {threshold:UInt32}`,
+    params
+  );
 
   for (const row of rows) {
     // Throttle: don't re-fire for the same rule + entity within the same window.

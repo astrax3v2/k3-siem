@@ -2,6 +2,7 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { db, sqlNowMinus } = require('../models/db');
+const { chQuery } = require('../models/clickhouse');
 const { authenticate, authorize } = require('../middleware/auth');
 const { INGEST_API_KEY } = require('../config');
 const { logAction } = require('../services/audit');
@@ -100,8 +101,8 @@ router.get('/:id', authenticate, async (req, res) => {
   if (!agent) return res.status(404).json({ error: 'Agent not found' });
   if (!guardTeamAccess(res, req.user, agent.team_id)) return;
 
-  const eventCount = (await d.prepare('SELECT COUNT(*) as cnt FROM events WHERE agent_id = ?').get(req.params.id))?.cnt || 0;
-  const recentEvents = await d.prepare('SELECT * FROM events WHERE agent_id = ? ORDER BY timestamp DESC LIMIT 20').all(req.params.id);
+  const eventCount = (await chQuery('SELECT COUNT(*) as cnt FROM events WHERE agent_id = {agent_id:String}', { agent_id: req.params.id }))[0]?.cnt || 0;
+  const recentEvents = await chQuery('SELECT * FROM events WHERE agent_id = {agent_id:String} ORDER BY timestamp DESC LIMIT 20', { agent_id: req.params.id });
 
   res.json({
     ...agent,

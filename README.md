@@ -377,7 +377,7 @@ k3-siem/
 │   ├── requirements.txt                 # 📦 Python dependencies
 │   └── Dockerfile                       # 🐳 Agent container image
 │
-├── 🐳 docker-compose.yml               # PostgreSQL + App + 3 Agents
+├── 🐳 docker-compose.yml               # PostgreSQL + ClickHouse + App + 3 Agents
 ├── 🐳 Dockerfile                        # Multi-stage Node.js build (non-root, healthcheck)
 ├── 🪟 start.bat                         # Windows dev startup
 ├── 🐧 start.sh                          # Linux/Mac dev startup
@@ -406,14 +406,14 @@ k3-siem/
                     │  (Express)    │
                     │              │
                     │ ┌──────────┐ │    ┌──────────────┐
-                    │ │ Ingest + │─┼───▶│ PostgreSQL   │
-                    │ │ OCSF map │ │    │ / SQLite     │
+                    │ │ Ingest + │─┼───▶│ ClickHouse   │  events, audit_log,
+                    │ │ OCSF map │ │    │ (log data)   │  process_nodes
                     │ └──────────┘ │    └──────────────┘
-                    │ ┌──────────┐ │
-                    │ │Correlate │ │◀── Brute Force / PowerShell /
-                    │ │ Engine   │ │    Privilege Escalation rules
-                    │ └──────────┘ │
-                    │ ┌──────────┐ │
+                    │ ┌──────────┐ │    ┌──────────────┐
+                    │ │Correlate │ │◀──▶│ PostgreSQL   │  users, agents, alerts,
+                    │ │ Engine   │ │    │ / SQLite     │  incidents, iocs, teams,
+                    │ └──────────┘ │    │ (relational) │  ueba_scores, playbooks…
+                    │ ┌──────────┐ │    └──────────────┘
                     │ │Agent Mon │ │◀── Offline detection + alerting
                     │ └──────────┘ │
                     │ ┌──────────┐ │
@@ -447,17 +447,18 @@ cd k3-siem
 
 # Required — docker-compose refuses to start without these set.
 cp .env.example .env
-# Edit .env: set POSTGRES_PASSWORD, JWT_SECRET, INGEST_API_KEY, CORS_ORIGIN
+# Edit .env: set POSTGRES_PASSWORD, CLICKHOUSE_PASSWORD, JWT_SECRET, INGEST_API_KEY, CORS_ORIGIN
 # (or generate them: openssl rand -base64 48 / openssl rand -hex 32 / openssl rand -base64 24)
 # For a local demo, set DEMO_MODE=true to also get synthetic events/alerts.
 
 docker-compose up --build
 ```
 
-This starts **5 containers**:
+This starts **6 containers**:
 | Container | Description | Port |
 |-----------|-------------|------|
-| 🐘 `db` | PostgreSQL 16 database | 5432 (internal) |
+| 🐘 `db` | PostgreSQL 16 — relational data (users, agents, alerts, incidents…) | 5432 (internal) |
+| 📈 `clickhouse` | ClickHouse — high-volume log data (events, audit_log, process_nodes) | 8123 (internal) |
 | 🛡️ `app` | K3 SIEM backend + frontend (`/health`, `/ready` healthcheck) | **3001** |
 | 🪟 `agent-windows` | Simulated Windows endpoint (WS-PC-001) + CVE scan | — |
 | 🐧 `agent-linux` | Simulated Linux server (SRV-UBUNTU-01) + CVE scan | — |
@@ -470,10 +471,15 @@ Open **http://localhost:3001** → Login with:
 - `bpaudel` / `K3@2026` — T2 Analyst
 - `analyst1` / `K3@2026` — T1 Analyst
 
-### Option 2: Local Development (SQLite)
+### Option 2: Local Development (SQLite + ClickHouse)
 
 ```bash
 # Requires Node.js >= 22
+
+# Relational data (users, agents, alerts, incidents…) uses SQLite automatically — no setup
+# needed. Log data (events, audit_log, process_nodes) needs a running ClickHouse instance;
+# there's no SQLite fallback for it. Start one once:
+docker run -d --name k3-clickhouse -p 8123:8123 -p 9000:9000 clickhouse/clickhouse-server
 
 # Windows
 start.bat
@@ -895,13 +901,17 @@ authentication.
 | `DB_CLIENT` | `sqlite` | Set to `postgres` for PostgreSQL |
 | `DATABASE_URL` | — | PostgreSQL connection string (required when `DB_CLIENT=postgres`) |
 | `DB_PATH` | `./data/siem.db` | SQLite database path |
+| `CLICKHOUSE_URL` | `http://localhost:8123` | ClickHouse HTTP endpoint — stores `events`, `audit_log`, `process_nodes` (required in every environment, no SQLite fallback) |
+| `CLICKHOUSE_USER` | `default` | ClickHouse user |
+| `CLICKHOUSE_PASSWORD` | — | ClickHouse password |
+| `CLICKHOUSE_DB` | `k3_siem` | ClickHouse database name |
 | `CORS_ORIGIN` | `http://localhost:3000` (dev) | Comma-separated allowed origin(s); wildcard rejected in production |
 | `TRUST_PROXY` | `1` | Express `trust proxy` setting, for correct client IPs behind a reverse proxy |
 | `SIEM_PUBLIC_URL` | request host | Public URL used in generated install scripts |
 | `DEMO_MODE` | `!NODE_ENV=production` | Generates synthetic events/alerts for demos — never enable against real data |
 | `LOG_INGEST_INTERVAL` | `3000` | Synthetic event generation interval (ms), only used when `DEMO_MODE=true` |
-| `EVENTS_RETENTION_DAYS` | `90` | Nightly purge age for `events` |
-| `CLOSED_ALERTS_RETENTION_DAYS` | `180` | Nightly purge age for closed `alerts` |
+| `EVENTS_RETENTION_DAYS` | `90` | ClickHouse table TTL for `events` |
+| `CLOSED_ALERTS_RETENTION_DAYS` | `180` | Nightly purge age for closed `alerts` (PostgreSQL) |
 | `GEOIP_DISABLED` | `false` | Set `true` to skip the `ip-api.com` geo-velocity lookup (air-gapped deployments) |
 
 **Optional connectors** (each is a no-op / "not configured" until its keys are set — see `.env.example`):
@@ -1008,9 +1018,11 @@ the SOAR execution result rather than silently pretending to succeed.
 ### Operational
 - **Backups**: `scripts/backup.sh` / `scripts/restore.sh` wrap `pg_dump`/`psql` against the
   `db` container — wire `backup.sh` into a host cron job.
-- **Retention**: events older than `EVENTS_RETENTION_DAYS` (default 90) and closed alerts
-  older than `CLOSED_ALERTS_RETENTION_DAYS` (default 180) are purged nightly.
-- **Health checks**: `GET /health` (liveness) and `GET /ready` (DB connectivity) for your
+- **Retention**: events older than `EVENTS_RETENTION_DAYS` (default 90) are dropped via a
+  ClickHouse table TTL, and closed alerts older than `CLOSED_ALERTS_RETENTION_DAYS`
+  (default 180) are purged nightly from PostgreSQL.
+- **Health checks**: `GET /health` (liveness) and `GET /ready` (Postgres + ClickHouse
+  connectivity) for your
   orchestrator's probes — also wired as the `app` container's Docker `HEALTHCHECK`, which gates
   `depends_on: condition: service_healthy` for the agent containers in `docker-compose.yml`.
 - **Container hardening**: the runtime image runs as the non-root `node` user.
@@ -1027,7 +1039,8 @@ the SOAR execution result rather than silently pretending to succeed.
 | 🎨 **Frontend** | React + React Router | 18.3 / 6.30 |
 | 📊 **Charts** | Recharts | 2.15 |
 | 🔌 **Real-time** | WebSocket (ws) | 8.18 |
-| 🐘 **Database** | PostgreSQL (prod) / SQLite (dev) | 16 / built-in |
+| 🐘 **Database** | PostgreSQL (prod) / SQLite (dev) — relational data | 16 / built-in |
+| 📈 **Log Store** | ClickHouse — events, audit_log, process_nodes | 24 |
 | 🐍 **Agent** | Python + requests + psutil + pyyaml | 3.12 |
 | 🐳 **Deployment** | Docker + Docker Compose (multi-stage, non-root, healthcheck) | — |
 | 🔐 **Auth** | JWT + bcrypt | 12h tokens |
