@@ -183,14 +183,6 @@ function schemaSql() {
         password_hash TEXT NOT NULL, role TEXT DEFAULT 't1_analyst', full_name TEXT,
         department TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), last_login TIMESTAMPTZ
       );
-      CREATE TABLE IF NOT EXISTS events (
-        id TEXT PRIMARY KEY, timestamp TIMESTAMPTZ DEFAULT NOW(), source TEXT NOT NULL,
-        event_id TEXT, computer TEXT, username TEXT, ip_address TEXT, action TEXT,
-        severity TEXT DEFAULT 'Info', raw_log TEXT,
-        indexed_at TIMESTAMPTZ DEFAULT NOW(), index_name TEXT DEFAULT 'primary',
-        agent_id TEXT,
-        ocsf_log TEXT, ocsf_class_uid INTEGER, ocsf_class_name TEXT, ocsf_category_name TEXT
-      );
       CREATE TABLE IF NOT EXISTS alerts (
         id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT, severity TEXT NOT NULL,
         status TEXT DEFAULT 'New', source TEXT, asset TEXT, username TEXT, ip_address TEXT,
@@ -321,9 +313,6 @@ function schemaSql() {
         scanned_at TIMESTAMPTZ DEFAULT NOW(),
         UNIQUE(agent_id, cve_id, software_name)
       );
-      CREATE INDEX IF NOT EXISTS idx_events_ts  ON events(timestamp);
-      CREATE INDEX IF NOT EXISTS idx_events_sev ON events(severity);
-      CREATE INDEX IF NOT EXISTS idx_events_agent ON events(agent_id);
       CREATE INDEX IF NOT EXISTS idx_alerts_ts  ON alerts(created_at);
       CREATE INDEX IF NOT EXISTS idx_alerts_sev ON alerts(severity);
       CREATE INDEX IF NOT EXISTS idx_iocs_type  ON iocs(type);
@@ -343,14 +332,6 @@ function schemaSql() {
       id TEXT PRIMARY KEY, username TEXT UNIQUE NOT NULL, email TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL, role TEXT DEFAULT 't1_analyst', full_name TEXT,
       department TEXT, created_at TEXT DEFAULT (datetime('now')), last_login TEXT
-    );
-    CREATE TABLE IF NOT EXISTS events (
-      id TEXT PRIMARY KEY, timestamp TEXT DEFAULT (datetime('now')), source TEXT NOT NULL,
-      event_id TEXT, computer TEXT, username TEXT, ip_address TEXT, action TEXT,
-      severity TEXT DEFAULT 'Info', raw_log TEXT,
-      indexed_at TEXT DEFAULT (datetime('now')), index_name TEXT DEFAULT 'primary',
-      agent_id TEXT,
-      ocsf_log TEXT, ocsf_class_uid INTEGER, ocsf_class_name TEXT, ocsf_category_name TEXT
     );
     CREATE TABLE IF NOT EXISTS alerts (
       id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT, severity TEXT NOT NULL,
@@ -482,9 +463,6 @@ function schemaSql() {
       scanned_at TEXT DEFAULT (datetime('now')),
       UNIQUE(agent_id, cve_id, software_name)
     );
-    CREATE INDEX IF NOT EXISTS idx_events_ts  ON events(timestamp);
-    CREATE INDEX IF NOT EXISTS idx_events_sev ON events(severity);
-    CREATE INDEX IF NOT EXISTS idx_events_agent ON events(agent_id);
     CREATE INDEX IF NOT EXISTS idx_alerts_ts  ON alerts(created_at);
     CREATE INDEX IF NOT EXISTS idx_alerts_sev ON alerts(severity);
     CREATE INDEX IF NOT EXISTS idx_iocs_type  ON iocs(type);
@@ -498,19 +476,6 @@ function schemaSql() {
     CREATE INDEX IF NOT EXISTS idx_vulns_severity ON vulnerabilities(severity);
     CREATE INDEX IF NOT EXISTS idx_vulns_cve ON vulnerabilities(cve_id);
   `;
-}
-
-async function migrateLegacyColumns(d) {
-  const additions = [
-    ['events', 'ocsf_log', 'TEXT'],
-    ['events', 'ocsf_class_uid', 'INTEGER'],
-    ['events', 'ocsf_class_name', 'TEXT'],
-    ['events', 'ocsf_category_name', 'TEXT'],
-  ];
-  for (const [table, col, type] of additions) {
-    try { await d.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`); }
-    catch (e) { /* column already exists */ }
-  }
 }
 
 // Ordered, tracked migrations applied on every boot. Each runs at most once (recorded in
@@ -594,11 +559,13 @@ const MIGRATIONS = [
     sql: () => `CREATE INDEX IF NOT EXISTS idx_dashboards_owner ON dashboards(owner)`,
   },
   {
-    // correlationEngine.js's per-rule query filters `event_id = ? AND timestamp >= ?` every
-    // 30s; without this, only the timestamp half of that predicate is indexed (idx_events_ts),
-    // so every enabled rule re-scans its whole time window row-by-row to check event_id.
+    // No-op: originally indexed events(event_id, timestamp) for correlationEngine.js's
+    // per-rule query, but events moved to ClickHouse (see models/clickhouse.js), which is
+    // ordered by (timestamp, severity, agent_id) instead — no Postgres/SQLite index needed.
+    // Left as a recorded no-op (rather than removed) so already-applied installs don't
+    // re-attempt the original CREATE INDEX against a table that no longer exists here.
     name: '0011_events_eventid_timestamp_index',
-    sql: () => `CREATE INDEX IF NOT EXISTS idx_events_eventid_ts ON events(event_id, timestamp)`,
+    sql: () => `SELECT 1`,
   },
   {
     // correlationEngine.js's dedupe check filters `rule_id = ? AND created_at >= ?` per match;
@@ -655,6 +622,12 @@ const MIGRATIONS = [
     name: '0021_incidents_team_id_index',
     sql: () => `CREATE INDEX IF NOT EXISTS idx_incidents_team_id ON incidents(team_id)`,
   },
+  {
+    // events/audit_log/process_nodes moved to ClickHouse (see models/clickhouse.js) — drop
+    // the Postgres/SQLite copies so existing volumes don't keep orphaned, unwritten tables.
+    name: '0022_drop_log_tables_moved_to_clickhouse',
+    sql: () => `DROP TABLE IF EXISTS events; DROP TABLE IF EXISTS audit_log; DROP TABLE IF EXISTS process_nodes;`,
+  },
 ];
 
 async function runMigrations(d) {
@@ -678,8 +651,6 @@ async function runMigrations(d) {
 async function initDb() {
   const d = db();
   await d.exec(schemaSql());
-  await migrateLegacyColumns(d);
-  await d.exec('CREATE INDEX IF NOT EXISTS idx_events_ocsf_class ON events(ocsf_class_uid);');
   await runMigrations(d);
   if (d.dialect === 'sqlite') console.log('[DB] Schema ready:', SQLITE_DB_PATH);
   else console.log('[DB] Schema ready:', 'postgres');

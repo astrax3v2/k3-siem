@@ -1,6 +1,6 @@
 'use strict';
 const { v4: uuidv4 } = require('uuid');
-const { db, sqlNowMinus } = require('../models/db');
+const { chInsert } = require('../models/clickhouse');
 const { matchIOCs } = require('./iocMatcher');
 const { buildRealtimeAlerts, persistRealtimeAlerts } = require('./realtimeAlerts');
 
@@ -41,13 +41,12 @@ function startIngestion(ms=3000) {
   console.log(`[Ingestion] Live log generation every ${ms}ms`);
   interval = setInterval(() => {
     (async () => {
-      const d = db();
       const batch = Array.from({length:rand(1,4)}, genEvent);
-      const insE = d.prepare(`INSERT INTO events(id,timestamp,source,event_id,computer,username,ip_address,action,severity,raw_log,index_name,agent_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`);
-      const insertEvents = d.transaction(async (rows) => {
-        for (const e of rows) await insE.run(e.id,e.timestamp,e.source,e.event_id,e.computer,e.username,e.ip_address,e.action,e.severity,e.raw_log,e.index_name,null);
-      });
-      await insertEvents(batch);
+      await chInsert('events', batch.map((e) => ({
+        id: e.id, timestamp: e.timestamp, source: e.source, event_id: e.event_id, computer: e.computer,
+        username: e.username, ip_address: e.ip_address, action: e.action, severity: e.severity,
+        raw_log: e.raw_log, index_name: e.index_name, agent_id: null,
+      })));
 
       const newAlerts = [];
       for (const ev of batch) {

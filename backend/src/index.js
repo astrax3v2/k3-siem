@@ -12,6 +12,7 @@ const { WebSocketServer } = require('ws');
 const path       = require('path');
 
 const { initDb }            = require('./models/db');
+const { initClickHouse, chPing } = require('./models/clickhouse');
 const { startIngestion, stopIngestion, registerWsClient } = require('./services/ingestion');
 const { startAgentMonitor, stopAgentMonitor } = require('./services/agentMonitor');
 const { startCorrelationEngine, stopCorrelationEngine } = require('./services/correlationEngine');
@@ -60,6 +61,7 @@ app.get('/health', (req, res) => res.json({ status: 'ok', time: new Date().toISO
 app.get('/ready', async (req, res) => {
   try {
     await (await initDb()).prepare('SELECT 1 as ok').get();
+    await chPing();
     res.json({ status: 'ready', time: new Date().toISOString() });
   } catch (e) {
     res.status(503).json({ status: 'not-ready', error: e.message });
@@ -93,6 +95,7 @@ wss.on('connection', (ws, req) => {
 
 async function start() {
   await initDb();
+  await initClickHouse();
 
   // Synthetic event/alert generation exists for demos only — it writes fake rows into the
   // same events/alerts tables real ingestion uses, so it must never run unannounced in a
