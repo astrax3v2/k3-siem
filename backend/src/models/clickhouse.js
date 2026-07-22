@@ -76,7 +76,9 @@ async function initClickHouse() {
       computer Nullable(String), username Nullable(String), ip_address Nullable(String),
       action Nullable(String), severity LowCardinality(String) DEFAULT 'Info', raw_log String,
       indexed_at DateTime64(3) DEFAULT now64(3), index_name LowCardinality(String) DEFAULT 'primary',
-      agent_id Nullable(String), ocsf_log Nullable(String), ocsf_class_uid Nullable(UInt32),
+      agent_id Nullable(String), parser_profile Nullable(String), parser_vendor Nullable(String),
+      parser_product Nullable(String), parser_family Nullable(String), parser_device_type Nullable(String),
+      parser_format Nullable(String), ocsf_log Nullable(String), ocsf_class_uid Nullable(UInt32),
       ocsf_class_name Nullable(String), ocsf_category_name Nullable(String)
     ) ENGINE = MergeTree
     PARTITION BY toYYYYMM(timestamp)
@@ -86,6 +88,12 @@ async function initClickHouse() {
   `);
   // Applied on every boot so a changed EVENTS_RETENTION_DAYS takes effect without a manual migration.
   await chExec(`ALTER TABLE events MODIFY TTL toDateTime(timestamp) + INTERVAL ${retentionDays} DAY`);
+  await chExec(`ALTER TABLE events ADD COLUMN IF NOT EXISTS parser_profile Nullable(String)`);
+  await chExec(`ALTER TABLE events ADD COLUMN IF NOT EXISTS parser_vendor Nullable(String)`);
+  await chExec(`ALTER TABLE events ADD COLUMN IF NOT EXISTS parser_product Nullable(String)`);
+  await chExec(`ALTER TABLE events ADD COLUMN IF NOT EXISTS parser_family Nullable(String)`);
+  await chExec(`ALTER TABLE events ADD COLUMN IF NOT EXISTS parser_device_type Nullable(String)`);
+  await chExec(`ALTER TABLE events ADD COLUMN IF NOT EXISTS parser_format Nullable(String)`);
 
   await chExec(`
     CREATE TABLE IF NOT EXISTS audit_log (

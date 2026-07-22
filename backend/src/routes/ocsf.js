@@ -2,7 +2,7 @@
 const express = require('express');
 const { chQuery } = require('../models/clickhouse');
 const { authenticate } = require('../middleware/auth');
-const { parseToOCSF, OCSF_VERSION, OCSF_CLASS_REFERENCE } = require('../services/ocsfParser');
+const { parseLogRecord, parseToOCSF, OCSF_VERSION, OCSF_CLASS_REFERENCE, SUPPORTED_PARSER_PROFILES } = require('../services/ocsfParser');
 const router = express.Router();
 
 // On-demand parse of any pasted raw log (string or JSON) into OCSF.
@@ -12,8 +12,9 @@ router.post('/parse', authenticate, async (req, res) => {
     return res.status(400).json({ error: 'raw log text or object is required' });
   }
   try {
+    const parsed = parseLogRecord(raw);
     const ocsf = parseToOCSF(raw);
-    res.json({ ocsf });
+    res.json({ ocsf, parsed, profile: parsed.parser });
   } catch (e) {
     res.status(400).json({ error: `Failed to parse log: ${e.message}` });
   }
@@ -23,11 +24,16 @@ router.get('/schema', authenticate, async (req, res) => {
   res.json({ version: OCSF_VERSION, classes: OCSF_CLASS_REFERENCE });
 });
 
+router.get('/profiles', authenticate, async (req, res) => {
+  res.json({ profiles: SUPPORTED_PARSER_PROFILES });
+});
+
 router.get('/stats', authenticate, async (req, res) => {
   const total = (await chQuery("SELECT COUNT(*) as cnt FROM events WHERE ocsf_class_uid IS NOT NULL"))[0]?.cnt || 0;
   const byClass = await chQuery('SELECT ocsf_class_uid, ocsf_class_name, COUNT(*) as cnt FROM events WHERE ocsf_class_uid IS NOT NULL GROUP BY ocsf_class_uid, ocsf_class_name ORDER BY cnt DESC');
   const byCategory = await chQuery('SELECT ocsf_category_name, COUNT(*) as cnt FROM events WHERE ocsf_category_name IS NOT NULL GROUP BY ocsf_category_name ORDER BY cnt DESC');
-  res.json({ total, byClass, byCategory });
+  const byProfile = await chQuery('SELECT parser_profile, parser_vendor, parser_product, COUNT(*) as cnt FROM events WHERE parser_profile IS NOT NULL GROUP BY parser_profile, parser_vendor, parser_product ORDER BY cnt DESC');
+  res.json({ total, byClass, byCategory, byProfile });
 });
 
 router.get('/events', authenticate, async (req, res) => {
@@ -39,7 +45,7 @@ router.get('/events', authenticate, async (req, res) => {
   if (search) { where.push('(action ILIKE {search:String} OR username ILIKE {search:String} OR computer ILIKE {search:String} OR ip_address ILIKE {search:String})'); params.search = `%${search}%`; }
   const wc = 'WHERE ' + where.join(' AND ');
   const total = (await chQuery(`SELECT COUNT(*) as cnt FROM events ${wc}`, params))[0]?.cnt || 0;
-  const rows = await chQuery(`SELECT id, timestamp, source, event_id, computer, username, ip_address, action, severity, ocsf_class_uid, ocsf_class_name, ocsf_category_name FROM events ${wc} ORDER BY timestamp DESC LIMIT {limit:UInt32} OFFSET {offset:UInt32}`, { ...params, limit: parseInt(limit, 10), offset });
+  const rows = await chQuery(`SELECT id, timestamp, source, event_id, computer, username, ip_address, action, severity, parser_profile, parser_vendor, parser_product, parser_family, parser_device_type, ocsf_class_uid, ocsf_class_name, ocsf_category_name FROM events ${wc} ORDER BY timestamp DESC LIMIT {limit:UInt32} OFFSET {offset:UInt32}`, { ...params, limit: parseInt(limit, 10), offset });
   res.json({ events: rows, total, page: parseInt(page, 10), limit: parseInt(limit, 10), pages: Math.ceil(total / parseInt(limit, 10)) });
 });
 
@@ -51,8 +57,9 @@ router.get('/events/:id', authenticate, async (req, res) => {
   if (row.ocsf_log) {
     try { ocsf = JSON.parse(row.ocsf_log); } catch { /* fall through */ }
   }
+  const parsed = parseLogRecord(row.raw_log || row);
   if (!ocsf) ocsf = parseToOCSF(row.raw_log || row);
-  res.json({ event: row, ocsf });
+  res.json({ event: row, ocsf, parsed, profile: parsed.parser });
 });
 
 module.exports = router;

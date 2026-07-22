@@ -4,7 +4,7 @@ const { v4: uuidv4 } = require('uuid');
 const { db } = require('../models/db');
 const { chQuery, chInsert, chNowMinus } = require('../models/clickhouse');
 const { authenticate } = require('../middleware/auth');
-const { parseToOCSF } = require('../services/ocsfParser');
+const { parseLogRecord, toOCSF } = require('../services/ocsfParser');
 const { matchIOCs } = require('../services/iocMatcher');
 const { buildRealtimeAlerts, persistRealtimeAlerts } = require('../services/realtimeAlerts');
 const { INGEST_API_KEY } = require('../config');
@@ -42,22 +42,39 @@ router.post('/ingest', async (req, res) => {
     return res.status(401).json({ error: 'Invalid API key' });
   const logs = Array.isArray(req.body) ? req.body : [req.body];
   const agentId = req.headers['x-agent-id'] || null;
-  const rows = logs.map(l => {
+  const parsedLogs = logs.map((log) => {
+    let parsed = null;
     let ocsf = null;
-    try { ocsf = parseToOCSF(l); } catch { /* best-effort normalization */ }
+    try {
+      parsed = parseLogRecord(log);
+      ocsf = toOCSF(parsed);
+    } catch {
+      parsed = null;
+      ocsf = null;
+    }
+    return { original: log, parsed, ocsf };
+  });
+  const rows = parsedLogs.map(({ original, parsed, ocsf }) => {
+    const normalized = parsed || {};
     return {
       id: uuidv4(),
-      timestamp: l.timestamp || new Date().toISOString(),
-      source: l.source || 'Unknown',
-      event_id: l.event_id != null ? String(l.event_id) : null,
-      computer: l.computer || null,
-      username: l.username || null,
-      ip_address: l.ip_address || null,
-      action: l.action || null,
-      severity: l.severity || 'Info',
-      raw_log: typeof l.raw === 'string' ? l.raw : JSON.stringify(l),
-      index_name: l.index || 'default',
-      agent_id: l.agent_id || agentId,
+      timestamp: normalized.timestamp || original.timestamp || new Date().toISOString(),
+      source: normalized.source || original.source || 'Unknown',
+      event_id: normalized.event_id != null ? String(normalized.event_id) : (original.event_id != null ? String(original.event_id) : null),
+      computer: normalized.computer || original.computer || null,
+      username: normalized.username || original.username || null,
+      ip_address: normalized.ip_address || original.ip_address || null,
+      action: normalized.action || original.action || null,
+      severity: normalized.severity || original.severity || 'Info',
+      raw_log: normalized.raw || (typeof original.raw === 'string' ? original.raw : JSON.stringify(original)),
+      index_name: normalized.index_name || original.index || original.index_name || 'default',
+      agent_id: original.agent_id || agentId,
+      parser_profile: normalized.parser?.profile_id || null,
+      parser_vendor: normalized.parser?.vendor || null,
+      parser_product: normalized.parser?.product || null,
+      parser_family: normalized.parser?.family || null,
+      parser_device_type: normalized.parser?.device_type || null,
+      parser_format: normalized.parser?.format || null,
       ocsf_log: ocsf ? JSON.stringify(ocsf) : null,
       ocsf_class_uid: ocsf ? ocsf.class_uid : null,
       ocsf_class_name: ocsf ? ocsf.class_name : null,
@@ -78,14 +95,14 @@ router.post('/ingest', async (req, res) => {
     } catch {}
   }
 
-  const normalized = logs.map((l) => ({
-    source: l.source || 'Unknown',
-    event_id: String(l.event_id || ''),
-    computer: l.computer || null,
-    username: l.username || null,
-    ip_address: l.ip_address || null,
-    action: l.action || '',
-    severity: l.severity || 'Info',
+  const normalized = parsedLogs.map(({ original, parsed }) => ({
+    source: parsed?.source || original.source || 'Unknown',
+    event_id: String(parsed?.event_id || original.event_id || ''),
+    computer: parsed?.computer || original.computer || null,
+    username: parsed?.username || original.username || null,
+    ip_address: parsed?.ip_address || original.ip_address || null,
+    action: parsed?.action || original.action || '',
+    severity: parsed?.severity || original.severity || 'Info',
   }));
 
   Promise.all(normalized.map((event) => buildRealtimeAlerts(event)))
@@ -93,9 +110,12 @@ router.post('/ingest', async (req, res) => {
     .catch(() => {});
 
   // IOC matching runs after the response is queued so ingestion latency isn't gated on it.
-  Promise.all(logs.map((l) => matchIOCs({
-    source: l.source, computer: l.computer, username: l.username,
-    ip_address: l.ip_address, raw_log: typeof l.raw === 'string' ? l.raw : JSON.stringify(l),
+  Promise.all(parsedLogs.map(({ original, parsed }) => matchIOCs({
+    source: parsed?.source || original.source,
+    computer: parsed?.computer || original.computer,
+    username: parsed?.username || original.username,
+    ip_address: parsed?.ip_address || original.ip_address,
+    raw_log: parsed?.raw || (typeof original.raw === 'string' ? original.raw : JSON.stringify(original)),
   }).catch(() => []))).catch(() => {});
 
   res.json({ ingested: rows.length, status: 'ok' });

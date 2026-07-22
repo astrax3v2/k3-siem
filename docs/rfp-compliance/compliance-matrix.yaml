@@ -1,0 +1,35 @@
+requirements:
+  - id: RFP-01
+    title: Platform customization
+    status: partially_compliant
+    implementation:
+      modules:
+        - backend/src/routes/tenants.js
+        - backend/src/routes/teams.js
+        - backend/src/routes/users.js
+        - backend/src/routes/agents.js
+        - frontend/src/components/Admin/TeamManagement.jsx
+    evidence:
+      - docs/architecture/tenant-foundation.md
+    gaps:
+      - Plugin architecture for collectors, parsers, and report exporters is not implemented in this slice.
+    owner: Platform Engineering
+    targetRelease: 2.5.0
+
+  - id: RFP-14
+    title: Multi-tenancy
+    status: partially_compliant
+    implementation:
+      modules:
+        - backend/src/services/tenantScope.js
+        - backend/src/services/teamScope.js
+        - backend/src/routes/auth.js
+        - backend/src/routes/dashboardLibrary.js
+    evidence:
+      - docs/architecture/tenant-foundation.md
+    gaps:
+      - Event-level tenant isolation in ClickHouse is not yet implemented.
+      - Alert and incident tenant backfill is not yet complete.
+      - Tenant-specific ingestion keys are not yet implemented.
+    owner: Platform Engineering
+    targetRelease: 2.5.0

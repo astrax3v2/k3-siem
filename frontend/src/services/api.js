@@ -50,6 +50,7 @@ export const intelApi = {
 export const correlationApi = {
   rules: () => api.get('/correlation/rules'),
   toggleRule: (id, enabled) => api.patch(`/correlation/rules/${id}`, { enabled }),
+  updateRule: (id, data) => api.patch(`/correlation/rules/${id}`, data),
   createRule: (data) => api.post('/correlation/rules', data),
   crossHits: () => api.get('/correlation/cross-hits'),
 };
@@ -101,6 +102,7 @@ export const vulnApi = {
 export const ocsfApi = {
   parse: (raw) => api.post('/ocsf/parse', { raw }),
   schema: () => api.get('/ocsf/schema'),
+  profiles: () => api.get('/ocsf/profiles'),
   stats: () => api.get('/ocsf/stats'),
   events: (params) => api.get('/ocsf/events', { params }),
   event: (id) => api.get(`/ocsf/events/${id}`),
@@ -135,12 +137,20 @@ export const osintApi = {
 export const teamsApi = {
   list: () => api.get('/teams'),
   create: (data) => api.post('/teams', data),
+  update: (id, data) => api.patch(`/teams/${id}`, data),
   remove: (id) => api.delete(`/teams/${id}`),
 };
 
 export const usersApi = {
   list: () => api.get('/users'),
   update: (id, data) => api.patch(`/users/${id}`, data),
+};
+
+export const tenantsApi = {
+  list: () => api.get('/tenants'),
+  create: (data) => api.post('/tenants', data),
+  update: (id, data) => api.patch(`/tenants/${id}`, data),
+  remove: (id) => api.delete(`/tenants/${id}`),
 };
 
 export default api;

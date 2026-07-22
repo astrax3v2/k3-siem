@@ -57,7 +57,7 @@ export function EventExplorer({ liveEvents }) {
         </select>
         <select value={filters.index} onChange={e => { setFilters(f => ({ ...f, index: e.target.value })); setPage(1); }} style={{ padding: '5px 8px', fontSize: 12 }}>
           <option value="">All Indices</option>
-          {['windows-security', 'linux-syslog', 'network-flow', 'endpoint-edr', 'cloud-identity'].map(i => <option key={i}>{i}</option>)}
+          {['windows-security', 'linux-syslog', 'network-flow', 'email-security', 'endpoint-edr', 'cloud-identity'].map(i => <option key={i}>{i}</option>)}
         </select>
         <button className="btn btn-secondary btn-sm" onClick={load}>🔄 Refresh</button>
         <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text3)' }}>{total.toLocaleString()} events</span>
