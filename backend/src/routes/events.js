@@ -1,14 +1,18 @@
 'use strict';
+const fs = require('fs/promises');
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { db } = require('../models/db');
 const { chQuery, chInsert, chNowMinus } = require('../models/clickhouse');
 const { authenticate } = require('../middleware/auth');
 const { parseLogRecord, toOCSF } = require('../services/ocsfParser');
+const { broadcast } = require('../services/ingestion');
 const { matchIOCs } = require('../services/iocMatcher');
 const { buildRealtimeAlerts, persistRealtimeAlerts } = require('../services/realtimeAlerts');
 const { INGEST_API_KEY } = require('../config');
 const router = express.Router();
+const MAX_IMPORT_BYTES = parseInt(process.env.LOG_IMPORT_MAX_BYTES || `${5 * 1024 * 1024}`, 10);
+const MAX_IMPORT_RECORDS = parseInt(process.env.LOG_IMPORT_MAX_RECORDS || '5000', 10);
 
 router.get('/', authenticate, async (req, res) => {
   const { page=1, limit=50, severity, source, search, index, agent_id } = req.query;
@@ -36,13 +40,8 @@ router.get('/stats', authenticate, async (req, res) => {
   });
 });
 
-router.post('/ingest', async (req, res) => {
-  const key = req.headers['x-api-key'];
-  if (key !== INGEST_API_KEY)
-    return res.status(401).json({ error: 'Invalid API key' });
-  const logs = Array.isArray(req.body) ? req.body : [req.body];
-  const agentId = req.headers['x-agent-id'] || null;
-  const parsedLogs = logs.map((log) => {
+function buildParsedLogs(logs, agentId = null) {
+  return logs.map((log) => {
     let parsed = null;
     let ocsf = null;
     try {
@@ -52,9 +51,12 @@ router.post('/ingest', async (req, res) => {
       parsed = null;
       ocsf = null;
     }
-    return { original: log, parsed, ocsf };
+    return { original: log, parsed, ocsf, agentId: log?.agent_id || agentId };
   });
-  const rows = parsedLogs.map(({ original, parsed, ocsf }) => {
+}
+
+function buildRows(parsedLogs) {
+  return parsedLogs.map(({ original, parsed, ocsf, agentId }) => {
     const normalized = parsed || {};
     return {
       id: uuidv4(),
@@ -68,7 +70,7 @@ router.post('/ingest', async (req, res) => {
       severity: normalized.severity || original.severity || 'Info',
       raw_log: normalized.raw || (typeof original.raw === 'string' ? original.raw : JSON.stringify(original)),
       index_name: normalized.index_name || original.index || original.index_name || 'default',
-      agent_id: original.agent_id || agentId,
+      agent_id: agentId,
       parser_profile: normalized.parser?.profile_id || null,
       parser_vendor: normalized.parser?.vendor || null,
       parser_product: normalized.parser?.product || null,
@@ -81,11 +83,72 @@ router.post('/ingest', async (req, res) => {
       ocsf_category_name: ocsf ? ocsf.category_name : null,
     };
   });
+}
+
+function buildRealtimeEvents(parsedLogs) {
+  return parsedLogs.map(({ original, parsed }) => ({
+    source: parsed?.source || original.source || 'Unknown',
+    event_id: String(parsed?.event_id || original.event_id || ''),
+    computer: parsed?.computer || original.computer || null,
+    username: parsed?.username || original.username || null,
+    ip_address: parsed?.ip_address || original.ip_address || null,
+    action: parsed?.action || original.action || '',
+    severity: parsed?.severity || original.severity || 'Info',
+  }));
+}
+
+function summarizeBy(rows, key) {
+  const counts = new Map();
+  for (const row of rows) {
+    const value = row[key] || 'unknown';
+    counts.set(value, (counts.get(value) || 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([value, count]) => ({ value, count }))
+    .sort((a, b) => b.count - a.count);
+}
+
+function parseInlineImportContent(content) {
+  if (content === undefined || content === null) return [];
+  if (Array.isArray(content)) return content;
+  if (typeof content === 'object') return [content];
+  const text = String(content).trim();
+  if (!text) return [];
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && typeof parsed === 'object') return [parsed];
+  } catch {}
+  return text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+}
+
+async function resolveImportLogs({ content, file_path: filePath }) {
+  if (content !== undefined && content !== null && String(content).trim() !== '') {
+    return { logs: parseInlineImportContent(content), source: 'inline' };
+  }
+  if (!filePath || !String(filePath).trim()) {
+    throw new Error('Provide log content or a file path');
+  }
+
+  const resolvedPath = String(filePath).trim();
+  const stat = await fs.stat(resolvedPath);
+  if (!stat.isFile()) throw new Error('Provided path is not a file');
+  if (stat.size > MAX_IMPORT_BYTES) {
+    throw new Error(`File is too large (${stat.size} bytes). Max allowed is ${MAX_IMPORT_BYTES} bytes`);
+  }
+
+  const raw = await fs.readFile(resolvedPath, 'utf8');
+  return { logs: parseInlineImportContent(raw), source: resolvedPath };
+}
+
+async function ingestLogs(logs, { agentId = null } = {}) {
+  const parsedLogs = buildParsedLogs(logs, agentId);
+  const rows = buildRows(parsedLogs);
   try {
     await chInsert('events', rows);
   } catch (e) {
     console.error('[Ingest] ClickHouse insert failed:', e.message);
-    return res.status(503).json({ error: 'Event storage temporarily unavailable' });
+    throw e;
   }
 
   if (agentId) {
@@ -95,19 +158,19 @@ router.post('/ingest', async (req, res) => {
     } catch {}
   }
 
-  const normalized = parsedLogs.map(({ original, parsed }) => ({
-    source: parsed?.source || original.source || 'Unknown',
-    event_id: String(parsed?.event_id || original.event_id || ''),
-    computer: parsed?.computer || original.computer || null,
-    username: parsed?.username || original.username || null,
-    ip_address: parsed?.ip_address || original.ip_address || null,
-    action: parsed?.action || original.action || '',
-    severity: parsed?.severity || original.severity || 'Info',
-  }));
+  const normalized = buildRealtimeEvents(parsedLogs);
 
-  Promise.all(normalized.map((event) => buildRealtimeAlerts(event)))
-    .then((groups) => persistRealtimeAlerts(groups.flat()))
-    .catch(() => {});
+  const alertGroups = await Promise.all(normalized.map((event) => buildRealtimeAlerts(event).catch(() => [])));
+  const alerts = alertGroups.flat();
+  if (alerts.length) {
+    await persistRealtimeAlerts(alerts);
+  }
+  if (rows.length) {
+    broadcast('events', rows.slice(0, 200));
+  }
+  if (alerts.length) {
+    broadcast('alerts', alerts.slice(0, 50));
+  }
 
   // IOC matching runs after the response is queued so ingestion latency isn't gated on it.
   Promise.all(parsedLogs.map(({ original, parsed }) => matchIOCs({
@@ -118,7 +181,46 @@ router.post('/ingest', async (req, res) => {
     raw_log: parsed?.raw || (typeof original.raw === 'string' ? original.raw : JSON.stringify(original)),
   }).catch(() => []))).catch(() => {});
 
-  res.json({ ingested: rows.length, status: 'ok' });
+  return { rows, parsedLogs, alerts };
+}
+
+router.post('/ingest', async (req, res) => {
+  const key = req.headers['x-api-key'];
+  if (key !== INGEST_API_KEY)
+    return res.status(401).json({ error: 'Invalid API key' });
+  const logs = Array.isArray(req.body) ? req.body : [req.body];
+  const agentId = req.headers['x-agent-id'] || null;
+  try {
+    const { rows } = await ingestLogs(logs, { agentId });
+    res.json({ ingested: rows.length, status: 'ok' });
+  } catch (e) {
+    return res.status(503).json({ error: 'Event storage temporarily unavailable' });
+  }
+});
+
+router.post('/import', authenticate, async (req, res) => {
+  const { content, file_path: filePath } = req.body || {};
+  try {
+    const { logs, source } = await resolveImportLogs({ content, file_path: filePath });
+    if (!logs.length) return res.status(400).json({ error: 'No log entries found to import' });
+    if (logs.length > MAX_IMPORT_RECORDS) {
+      return res.status(400).json({ error: `Too many log entries (${logs.length}). Max allowed is ${MAX_IMPORT_RECORDS}` });
+    }
+
+    const { rows, alerts } = await ingestLogs(logs);
+    res.json({
+      imported: rows.length,
+      alerts_created: alerts.length,
+      source,
+      profiles: summarizeBy(rows, 'parser_profile'),
+      indices: summarizeBy(rows, 'index_name'),
+      classes: summarizeBy(rows, 'ocsf_class_name'),
+      status: 'ok',
+    });
+  } catch (e) {
+    const status = /No log entries|Provide log content|too large|Too many log entries|not a file|ENOENT|EACCES|EPERM/i.test(e.message) ? 400 : 500;
+    res.status(status).json({ error: e.message || 'Failed to import logs' });
+  }
 });
 
 router.post('/kql', authenticate, async (req, res) => {

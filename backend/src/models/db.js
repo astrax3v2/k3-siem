@@ -2,7 +2,15 @@
 const path = require('path');
 const fs = require('fs');
 
-const SQLITE_DB_PATH = path.resolve(process.env.DB_PATH || './data/siem.db');
+const BACKEND_ROOT = path.resolve(__dirname, '../..');
+const DEFAULT_SQLITE_DB_PATH = path.join(BACKEND_ROOT, 'data', 'siem.db');
+
+function resolveDbPath(dbPath) {
+  if (!dbPath) return DEFAULT_SQLITE_DB_PATH;
+  return path.isAbsolute(dbPath) ? dbPath : path.resolve(BACKEND_ROOT, dbPath);
+}
+
+const SQLITE_DB_PATH = resolveDbPath(process.env.DB_PATH);
 const DEFAULT_TENANT_ID = 'tenant-default';
 let _dialect = null;
 let _sqliteRaw = null;

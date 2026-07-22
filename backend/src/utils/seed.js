@@ -1,5 +1,6 @@
 'use strict';
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 const { v4: uuidv4 } = require('uuid');
 const bcrypt = require('bcryptjs');
 const { db, initDb, getDialect } = require('../models/db');
@@ -298,14 +299,16 @@ async function seed() {
   // Intel feeds
   const insFeed = d.prepare(`INSERT INTO intel_feeds(id,name,url,type,status,last_sync,ioc_count) VALUES(?,?,?,?,?,?,?)`);
   for (const [name,url,type,status,sync,count] of [
-    ['MISP Instance','https://misp.example.com','STIX/TAXII','active',ago(120000),847],
-    ['VirusTotal API','https://www.virustotal.com/api','REST','active',ago(300000),12043],
-    ['AbuseIPDB','https://api.abuseipdb.com','REST','active',ago(60000),5821],
-    ['OTX AlienVault','https://otx.alienvault.com/api','REST','active',ago(480000),3219],
-    ['Recorded Future','https://api.recordedfuture.com','REST','active',ago(720000),9871],
-    ['NVD NIST CVE','https://nvd.nist.gov/feeds','XML','active',ago(3600000),2341],
+    ['AbuseIPDB','https://api.abuseipdb.com/api/v2/blacklist?limit=100&confidenceMinimum=75','REST',process.env.ABUSEIPDB_API_KEY ? 'ready' : 'requires_config',null,0],
+    ['OTX AlienVault','https://otx.alienvault.com/api/v1/pulses/subscribed?limit=20','REST',process.env.OTX_API_KEY ? 'ready' : 'requires_config',null,0],
+    ['OpenPhish Community','https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt','TXT','ready',null,0],
+    ['PhishTank Verified Online','http://data.phishtank.com/data/online-valid.json','JSON','ready',null,0],
+    ['Spamhaus DROP IPv4','https://www.spamhaus.org/drop/drop_v4.json','NDJSON','ready',null,0],
+    ['Spamhaus DROP IPv6','https://www.spamhaus.org/drop/drop_v6.json','NDJSON','ready',null,0],
+    ['Feodo Tracker Recommended','https://feodotracker.abuse.ch/downloads/ipblocklist_recommended.txt','TXT','ready',null,0],
+    ['SSLBL JA3','https://sslbl.abuse.ch/blacklist/ja3_fingerprints.csv','CSV','ready',null,0],
   ]) await insFeed.run(uuidv4(),name,url,type,status,sync,count);
-  console.log('[Seed] Intel feeds: 6');
+  console.log('[Seed] Intel feeds: 8');
 
   // Agents + Assets
   const insAgent = d.prepare('INSERT INTO agents(id, hostname, os, ip, status, agent_version, tags, collected_sources, events_sent, last_heartbeat, team_id, tenant_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)');

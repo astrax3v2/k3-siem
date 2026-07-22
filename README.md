@@ -155,6 +155,8 @@ to full compromise, reachable from any incident with a reconstructed attack chai
 ### 📋 Event Explorer
 - **50 events per page** with pagination
 - **Filters**: Free-text search (user/computer/IP/action), severity dropdown, index selector
+- **Log Import**: paste raw logs, upload a local logfile, or provide a backend file path for
+  automatic parsing and ingestion into Discover plus the live event/alert stream
 - **5 Log Indices**: `windows-security`, `linux-syslog`, `network-flow`, `endpoint-edr`, `cloud-identity`
 - **Live Event Overlay** Top 10 new events highlighted in green with streaming indicator
 - **Columns**: Timestamp, Index badge, Source, Event ID (gold monospace), Computer, User, Action, IP, Severity badge
@@ -201,8 +203,10 @@ to full compromise, reachable from any incident with a reconstructed attack chai
 - **Type Filters** All, IP, Domain, Hash, URL, Email
 - **Add IOC Form** Type, value, confidence (0-100%), severity, source, description
 - **IOC Table**: Type badge, Indicator (monospace), Confidence bar, Severity, Hits (red if >10), Source, First Seen
-- **📡 Feed Status Panel** Feed name, IOC count, active/inactive indicator
-  - MISP, VirusTotal, AbuseIPDB, OTX AlienVault, Recorded Future, NVD NIST
+- **Manual Feed Sync** for admin and T2 analyst roles directly from the UI
+- **📡 Feed Status Panel** Feed name, feed type, IOC count, last sync time, and real status
+  - AbuseIPDB, OTX AlienVault, OpenPhish Community, PhishTank Verified Online, Spamhaus DROP IPv4/IPv6, Feodo Tracker Recommended, SSLBL JA3
+- **CIDR-aware IOC matching** so netblock feeds such as Spamhaus DROP can trigger threat-intel alerts
 - **🗺️ Threat Origins** Geographic breakdown: Russia, China, N. Korea, Iran, Anonymous
 
 ### 👤 UEBA (User & Entity Behavior Analytics)
@@ -635,7 +639,7 @@ hands you a copy-paste install script) straight from the UI. See "Remote Deploym
 | Feature | Details |
 |---------|---------|
 | **IOC Types** | IP · Domain · Hash · URL · Email with type badges |
-| **Feeds** | MISP · VirusTotal · AbuseIPDB · OTX · Recorded Future · NVD NIST |
+| **Feeds** | AbuseIPDB · OTX · OpenPhish · PhishTank · Spamhaus DROP v4/v6 · Feodo Tracker · SSLBL JA3 |
 | **Metrics** | Confidence bars · Hit counts · Threat origin map |
 
 ### 👤 UEBA
@@ -807,6 +811,7 @@ authentication.
 | `GET` | `/api/events` | JWT | Paginated events (50/page) — filters: severity, source, search, index, agent_id |
 | `GET` | `/api/events/stats` | JWT | Event statistics and counts |
 | `POST` | `/api/events/ingest` | API Key | Bulk log ingestion from agents (auto-normalized to OCSF) |
+| `POST` | `/api/events/import` | JWT | Import pasted logs, uploaded file contents, or a backend file path into Discover |
 | `POST` | `/api/events/kql` | JWT | Execute KQL query |
 
 ### 🧬 OCSF
@@ -865,6 +870,8 @@ authentication.
 | `GET` | `/api/intel/iocs` | JWT | List IOCs with filters |
 | `POST` | `/api/intel/iocs` | JWT (t2+) | Create IOC |
 | `GET` | `/api/intel/feeds` | JWT | List intel feeds |
+| `GET` | `/api/intel/feeds/sync` | JWT (t2+) | Trigger a manual threat-intel feed sync |
+| `POST` | `/api/intel/feeds/sync` | JWT (t2+) | Trigger a manual threat-intel feed sync |
 | `GET` | `/api/soar/playbooks` | JWT | List playbooks + executions |
 | `POST` | `/api/soar/playbooks/:id/execute` | JWT (t2+) | Execute playbook |
 | `GET` | `/api/soar/executions/:id` | JWT | Poll execution progress |
@@ -900,7 +907,7 @@ authentication.
 | `NODE_ENV` | `development` | `production` for Docker — also enforces a non-wildcard `CORS_ORIGIN` |
 | `DB_CLIENT` | `sqlite` | Set to `postgres` for PostgreSQL |
 | `DATABASE_URL` | — | PostgreSQL connection string (required when `DB_CLIENT=postgres`) |
-| `DB_PATH` | `./data/siem.db` | SQLite database path |
+| `DB_PATH` | `backend/data/siem.db` | SQLite database path; relative paths are resolved from `backend/` so local startups stay consistent |
 | `CLICKHOUSE_URL` | `http://localhost:8123` | ClickHouse HTTP endpoint — stores `events`, `audit_log`, `process_nodes` (required in every environment, no SQLite fallback) |
 | `CLICKHOUSE_USER` | `default` | ClickHouse user |
 | `CLICKHOUSE_PASSWORD` | — | ClickHouse password |
@@ -926,7 +933,7 @@ authentication.
 | `PANOS_HOST`, `PANOS_API_KEY`, `PANOS_BLOCK_GROUP` | Palo Alto firewall IP blocking |
 | `CROWDSTRIKE_BASE_URL`, `CROWDSTRIKE_CLIENT_ID`, `CROWDSTRIKE_CLIENT_SECRET` | CrowdStrike host isolation |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TO` | Email alerts |
-| `VIRUSTOTAL_API_KEY`, `ABUSEIPDB_API_KEY`, `OTX_API_KEY` | Threat-intel feed sync (every 30 min) |
+| `ABUSEIPDB_API_KEY`, `OTX_API_KEY`, `PHISHTANK_APP_KEY` | Threat-intel feed sync (every 5 min); open feeds run without keys, API-backed feeds activate when configured |
 | `NVD_API_KEY` | Raises the agent-side CVE scan's NVD rate limit (5 → 50 req/30s) |
 
 ### Database Schema (Key Tables)
@@ -1008,7 +1015,7 @@ fake/simulated behavior pretending to be real.
 | Jira / ServiceNow ticketing | Real once `JIRA_*` / `SERVICENOW_*` env vars are set |
 | Email alerts | Real once `SMTP_*` / `ALERT_EMAIL_*` env vars are set |
 | CrowdStrike host isolation, Palo Alto IP blocking, MISP IOC submission | Real once their respective env vars are set (see `.env.example`) — these call your actual tenant, so test in a non-prod environment first |
-| VirusTotal / AbuseIPDB / OTX threat-intel feed sync | Real once their API keys are set — runs every 30 minutes |
+| AbuseIPDB / OTX threat-intel feed sync | Real once their API keys are set; open-source feeds (OpenPhish, PhishTank, Spamhaus DROP, Feodo Tracker, SSLBL JA3) run without paid credentials — sync runs every 5 minutes |
 | CVE vulnerability scanning | Real — agents query the live NVD CVE API by default (5 req/30s); set `K3_NVD_API_KEY` on the agent for 50 req/30s. `K3_SIMULATE=true` agents use a curated dataset instead |
 | Geo-velocity (UEBA) | Uses the free `ip-api.com` lookup by default; set `GEOIP_DISABLED=true` for air-gapped deployments |
 

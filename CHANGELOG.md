@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Auto log import into Discover / live dashboards** - Event Explorer now accepts pasted logs,
+  uploaded files, or a backend file path and sends them through a new `POST /api/events/import`
+  ingestion route. Imported logs reuse the global parser pipeline, auto-detect the log profile,
+  write normalized events into Discover, and broadcast matching live event/alert updates to the UI.
+- **Expanded open-source threat-intel feed sync** - the built-in feed catalog now includes
+  OpenPhish Community, PhishTank Verified Online, Spamhaus DROP IPv4/IPv6, Feodo Tracker
+  Recommended, and SSLBL JA3 alongside AbuseIPDB and OTX. The Threat Intel page also gained a
+  manual feed sync action via `GET/POST /api/intel/feeds/sync`.
 - **Process Tree / Attack Chain Investigation** - a CrowdStrike Falcon-style process execution
   tree for tracing a compromise from initial entry to full compromise. New `process_nodes`
   table stores parent/child process lineage (pid/ppid), MITRE tactic/technique, severity, and
@@ -26,6 +34,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   `scripts/switch-to-live-monitoring.ps1` for local live-monitoring restarts.
 
 ### Changed
+- **Threat-intel sync cadence** is now every 5 minutes instead of every 30 minutes, and the feed
+  status panel now reflects real built-in feed rows rather than static placeholders.
+- **IOC matching** now supports CIDR/range indicators, so feeds such as Spamhaus DROP can
+  generate threat-intel alerts from matching event IPs.
+- **Backend startup path handling** now always loads `backend/.env` and resolves the default
+  SQLite database relative to `backend/`, preventing mismatched local databases when the server is
+  launched from the repo root.
 - **SOAR playbooks** now support inline editing from the UI, so the Edit action updates
   playbook metadata and steps instead of being a dead-end button.
 - **Asset Inventory** now exposes installed endpoint applications more clearly in inventory
@@ -33,6 +48,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   present on the host.
 - **Demo access** now includes a seeded T1 analyst account (`analyst1` / `K3@2026`) alongside
   the existing admin and T2 analyst accounts for role-based testing.
+
+### Fixed
+- **Login UX** now shows a backend-unreachable error when `localhost:3001` is down instead of
+  incorrectly presenting every network failure as "Invalid credentials".
 
 ## [2.0.1] - 2026-06-30
 

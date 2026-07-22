@@ -1,5 +1,6 @@
 'use strict';
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 require('./config'); // validates JWT_SECRET / INGEST_API_KEY are set; exits process if not
 const express    = require('express');
 const cors       = require('cors');
@@ -9,7 +10,6 @@ const compression= require('compression');
 const rateLimit  = require('express-rate-limit');
 const http       = require('http');
 const { WebSocketServer } = require('ws');
-const path       = require('path');
 
 const { initDb }            = require('./models/db');
 const { initClickHouse, chPing } = require('./models/clickhouse');

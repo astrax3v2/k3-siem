@@ -38,6 +38,7 @@ export const alertsApi = {
 export const eventsApi = {
   list: (params) => api.get('/events', { params }),
   stats: () => api.get('/events/stats'),
+  import: (data) => api.post('/events/import', data),
   kql: (query) => api.post('/events/kql', { query }),
 };
 
@@ -45,6 +46,7 @@ export const intelApi = {
   iocs: (params) => api.get('/intel/iocs', { params }),
   createIoc: (data) => api.post('/intel/iocs', data),
   feeds: () => api.get('/intel/feeds'),
+  syncFeeds: () => api.post('/intel/feeds/sync'),
 };
 
 export const correlationApi = {

@@ -5,6 +5,7 @@ const { db, getDialect, sqlNow, sqlNowMinus, sqlDate } = require('../models/db')
 const { chQuery, chNowMinus } = require('../models/clickhouse');
 const { authenticate, authorize, ROLE_ADMIN, ROLE_T1, ROLE_T2 } = require('../middleware/auth');
 const { runStep } = require('../services/connectors');
+const { runOnce: runFeedSync, ensureFeedCatalog, getFeedDefinitions } = require('../services/connectors/feedSync');
 const { logAction } = require('../services/audit');
 const { computeSla } = require('../services/slaPolicy');
 const { isAdmin, alertTeamJoin, scopeClause, guardTeamAccess } = require('../services/teamScope');
@@ -129,8 +130,22 @@ router.post('/intel/iocs', authenticate, authorize(ROLE_T2, ROLE_ADMIN), async (
 });
 
 router.get('/intel/feeds', authenticate, async (req, res) => {
-  res.json({ feeds: await db().prepare('SELECT * FROM intel_feeds ORDER BY name').all() });
+  const d = db();
+  await ensureFeedCatalog(d);
+  const supported = getFeedDefinitions().map((feed) => feed.name);
+  const placeholders = supported.map(() => '?').join(',');
+  const feeds = await d.prepare(`SELECT * FROM intel_feeds WHERE name IN (${placeholders}) ORDER BY name`).all(...supported);
+  res.json({ feeds });
 });
+
+async function handleFeedSync(req, res) {
+  const result = await runFeedSync();
+  await logAction(req.user.username, 'threat_feed_sync', 'intel_feed', 'builtin', `added:${result.totals.added}`, req.ip);
+  res.json(result);
+}
+
+router.post('/intel/feeds/sync', authenticate, authorize(ROLE_T2, ROLE_ADMIN), handleFeedSync);
+router.get('/intel/feeds/sync', authenticate, authorize(ROLE_T2, ROLE_ADMIN), handleFeedSync);
 
 // ── CORRELATION ────────────────────────────────────────────────────────────
 router.get('/correlation/rules', authenticate, async (req, res) => {
