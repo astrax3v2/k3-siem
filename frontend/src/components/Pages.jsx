@@ -13,6 +13,11 @@ export function EventExplorer({ liveEvents }) {
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [filePath, setFilePath] = useState('');
+  const [importContent, setImportContent] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const [importError, setImportError] = useState('');
   const [filters, setFilters] = useState({
     severity: searchParams.get('severity') || '',
     source: searchParams.get('source') || '',
@@ -47,8 +52,103 @@ export function EventExplorer({ liveEvents }) {
   const liveIds = new Set(liveTop.map(e => e.id).filter(Boolean));
   const mergedEvents = [...liveTop, ...events.filter(e => !liveIds.has(e.id))];
 
+  const summarizeImport = (payload) => {
+    if (!payload) return '';
+    const topProfiles = (payload.profiles || []).slice(0, 3).map((item) => `${item.value} (${item.count})`).join(', ');
+    return `${payload.imported} logs imported${payload.alerts_created ? `, ${payload.alerts_created} alerts created` : ''}${topProfiles ? `. Top parsers: ${topProfiles}` : ''}.`;
+  };
+
+  const importLogs = async (payload) => {
+    setImporting(true);
+    setImportError('');
+    setImportResult(null);
+    try {
+      const res = await eventsApi.import(payload);
+      setImportResult(res.data);
+      setPage(1);
+      load();
+    } catch (e) {
+      setImportError(e.response?.data?.error || e.message || 'Import failed');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const onImportPath = async () => {
+    if (!filePath.trim()) return;
+    await importLogs({ file_path: filePath.trim() });
+  };
+
+  const onImportContent = async () => {
+    if (!importContent.trim()) return;
+    await importLogs({ content: importContent });
+  };
+
+  const onLoadLocalFile = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      setImportContent(text);
+      setImportError('');
+      setImportResult({
+        imported: 0,
+        alerts_created: 0,
+        profiles: [],
+        source: `Loaded ${file.name} into the import box. Click "Import Pasted / Uploaded Logs" to ingest it.`,
+      });
+    } catch {
+      setImportError('Failed to read the selected file');
+    }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div className="card-title">Log Import</div>
+        <div style={{ fontSize: 12, color: 'var(--text2)' }}>
+          Provide a logfile path on this machine, paste raw logs, or load a local file. The system auto-detects the log type and sends parsed events into Discover and the live dashboard stream.
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 150px', gap: 8 }}>
+          <input
+            placeholder="Backend file path, for example C:\\logs\\firewall.log"
+            value={filePath}
+            onChange={(e) => setFilePath(e.target.value)}
+            style={{ padding: '7px 10px', fontSize: 12 }}
+          />
+          <button className="btn btn-secondary btn-sm" disabled={importing || !filePath.trim()} onClick={onImportPath}>
+            {importing ? 'Importing...' : 'Import From Path'}
+          </button>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>
+            Load Local File
+            <input type="file" accept=".log,.txt,.json,.cef,.csv" onChange={onLoadLocalFile} style={{ display: 'none' }} />
+          </label>
+          <span style={{ fontSize: 11, color: 'var(--text3)' }}>
+            Local files are read in the browser first, then imported as text.
+          </span>
+        </div>
+        <textarea
+          value={importContent}
+          onChange={(e) => setImportContent(e.target.value)}
+          rows={6}
+          placeholder="Paste one log per line, NDJSON, a JSON array, syslog, CEF, firewall logs, Windows event JSON, email logs, or WAF logs..."
+          style={{ width: '100%', padding: '8px 10px', fontFamily: 'Consolas, monospace', fontSize: 12, resize: 'vertical' }}
+        />
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button className="btn btn-primary btn-sm" disabled={importing || !importContent.trim()} onClick={onImportContent}>
+            {importing ? 'Importing...' : 'Import Pasted / Uploaded Logs'}
+          </button>
+          {importResult?.source && (
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>
+              {importResult.imported > 0 ? summarizeImport(importResult) : importResult.source}
+            </span>
+          )}
+          {importError && <span style={{ fontSize: 11, color: '#fc8181' }}>{importError}</span>}
+        </div>
+      </div>
+
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <input placeholder="Search user, computer, IP, action…" value={filters.search} onChange={e => { setFilters(f => ({ ...f, search: e.target.value })); setPage(1); }} style={{ width: 240, padding: '5px 10px', fontSize: 12 }} />
         <select value={filters.severity} onChange={e => { setFilters(f => ({ ...f, severity: e.target.value })); setPage(1); }} style={{ padding: '5px 8px', fontSize: 12 }}>
@@ -57,7 +157,7 @@ export function EventExplorer({ liveEvents }) {
         </select>
         <select value={filters.index} onChange={e => { setFilters(f => ({ ...f, index: e.target.value })); setPage(1); }} style={{ padding: '5px 8px', fontSize: 12 }}>
           <option value="">All Indices</option>
-          {['windows-security', 'linux-syslog', 'network-flow', 'endpoint-edr', 'cloud-identity'].map(i => <option key={i}>{i}</option>)}
+          {['windows-security', 'linux-syslog', 'network-flow', 'email-security', 'endpoint-edr', 'cloud-identity'].map(i => <option key={i}>{i}</option>)}
         </select>
         <button className="btn btn-secondary btn-sm" onClick={load}>🔄 Refresh</button>
         <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text3)' }}>{total.toLocaleString()} events</span>
@@ -220,10 +320,13 @@ export function ThreatIntel() {
   const [feeds, setFeeds] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [feedMessage, setFeedMessage] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ type: 'IP', value: '', confidence: 80, severity: 'High', source: 'Manual', description: '' });
   const canAdd = user?.role === 'admin' || user?.role === 't2_analyst';
+  const canManage = canAdd;
 
   const load = useCallback(() => {
     setLoading(true);
@@ -239,6 +342,28 @@ export function ThreatIntel() {
     const res = await intelApi.createIoc(form);
     setIocs(prev => [res.data, ...prev]);
     setShowAdd(false);
+  };
+
+  const syncFeeds = async () => {
+    setSyncing(true);
+    try {
+      const res = await intelApi.syncFeeds();
+      const totals = res.data?.totals || {};
+      setFeedMessage(`Synced ${totals.active || 0} feeds, added ${totals.added || 0} new indicators.`);
+      load();
+    } catch (error) {
+      setFeedMessage(error?.response?.data?.error || error.message || 'Feed sync failed');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const statusColor = (status) => {
+    if (status === 'active') return '#68d391';
+    if (status === 'ready') return '#63b3ed';
+    if (status === 'requires_config') return '#f6ad55';
+    if (status === 'error') return '#fc8181';
+    return 'var(--text3)';
   };
 
   return (
@@ -257,8 +382,14 @@ export function ThreatIntel() {
           {['', 'IP', 'Domain', 'Hash', 'URL', 'Email'].map(t => (
             <button key={t} className={`btn btn-sm ${typeFilter === t ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTypeFilter(t)}>{t || 'All'}</button>
           ))}
-          {canAdd && <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }} onClick={() => setShowAdd(s => !s)}>+ Add IOC</button>}
+          {canManage && (
+            <button className="btn btn-secondary btn-sm" style={{ marginLeft: 'auto' }} onClick={syncFeeds} disabled={syncing}>
+              {syncing ? 'Syncing…' : 'Sync Feeds'}
+            </button>
+          )}
+          {canAdd && <button className="btn btn-primary btn-sm" onClick={() => setShowAdd(s => !s)}>+ Add IOC</button>}
         </div>
+        {feedMessage && <div style={{ fontSize: 12, color: 'var(--text2)' }}>{feedMessage}</div>}
 
         {showAdd && (
           <div className="card">
@@ -314,15 +445,23 @@ export function ThreatIntel() {
       </div>
 
       {/* Feed panel */}
-      <div style={{ width: 220, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div className="card">
           <div className="card-title">📡 Feed Status</div>
           {feeds.map((f, fi) => (
-            <div key={f.id ? `feed:${f.id}:${fi}` : `feed:row:${fi}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid rgba(30,58,110,.3)', fontSize: 12 }}>
-              <div style={{ width: 6, height: 6, borderRadius: '50%', background: f.status === 'active' ? '#68d391' : '#fc8181', flexShrink: 0 }} />
+            <div key={f.id ? `feed:${f.id}:${fi}` : `feed:row:${fi}`} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 0', borderBottom: '1px solid rgba(30,58,110,.3)', fontSize: 12 }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: statusColor(f.status), flexShrink: 0, marginTop: 4 }} />
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 500 }}>{f.name}</div>
-                <div style={{ fontSize: 10, color: 'var(--text3)' }}>{f.ioc_count?.toLocaleString()} IOCs</div>
+                <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>
+                  {f.type} · {f.ioc_count?.toLocaleString() || 0} IOCs
+                </div>
+                <div style={{ fontSize: 10, color: statusColor(f.status), marginTop: 2, textTransform: 'capitalize' }}>
+                  {String(f.status || 'unknown').replace('_', ' ')}
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>
+                  {f.last_sync ? `Last sync ${new Date(f.last_sync).toLocaleString()}` : 'Awaiting first sync'}
+                </div>
               </div>
             </div>
           ))}

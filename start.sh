@@ -32,6 +32,18 @@ cd frontend && npm install --silent 2>&1 | tail -2
 echo -e "${GREEN}✅ Frontend dependencies installed${NC}"
 cd ..
 
+node -e "const http=require('http'); const req=http.get('http://127.0.0.1:8123/ping', (res) => process.exit(res.statusCode === 200 ? 0 : 1)); req.on('error', () => process.exit(1)); req.setTimeout(1500, () => { req.destroy(); process.exit(1); });"
+if [ $? -ne 0 ]; then
+  echo ""
+  echo -e "${RED}ClickHouse is not reachable at http://localhost:8123${NC}"
+  echo "Local dev in K3 SIEM requires ClickHouse for events, audit log, and process trees."
+  echo ""
+  echo "Start Docker Desktop or another local ClickHouse service, then run one of:"
+  echo "  docker start k3-clickhouse"
+  echo "  docker run -d --name k3-clickhouse -p 8123:8123 -p 9000:9000 clickhouse/clickhouse-server"
+  exit 1
+fi
+
 # Seed database if needed
 if [ ! -f "backend/data/siem.db" ]; then
   echo ""

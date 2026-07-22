@@ -1,9 +1,11 @@
 'use strict';
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 const { v4: uuidv4 } = require('uuid');
 const bcrypt = require('bcryptjs');
 const { db, initDb, getDialect } = require('../models/db');
 const { chInsert, chExec, initClickHouse } = require('../models/clickhouse');
+const { DEFAULT_TENANT_ID } = require('../services/tenantScope');
 
 const rand = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
@@ -30,30 +32,34 @@ async function seed() {
 
   await d.exec(`DELETE FROM playbook_executions; DELETE FROM ueba_scores; DELETE FROM kql_saved_queries;
           DELETE FROM intel_feeds; DELETE FROM incident_alerts; DELETE FROM incident_notes; DELETE FROM incidents; DELETE FROM iocs; DELETE FROM alerts;
-          DELETE FROM playbooks; DELETE FROM correlation_rules; DELETE FROM users; DELETE FROM teams;
+          DELETE FROM playbooks; DELETE FROM correlation_rules; DELETE FROM dashboards; DELETE FROM users; DELETE FROM teams; DELETE FROM tenants;
           DELETE FROM assets; DELETE FROM agents;`);
   await chExec('TRUNCATE TABLE events');
   await chExec('TRUNCATE TABLE process_nodes');
   await chExec('TRUNCATE TABLE audit_log');
   console.log('[Seed] Cleared');
 
+  const insTenant = d.prepare('INSERT INTO tenants(id, name, description, is_active) VALUES(?,?,?,?)');
+  await insTenant.run(DEFAULT_TENANT_ID, 'K3 Default Tenant', 'Primary tenant for local development and single-organization deployments', 1);
+  console.log('[Seed] Tenants: 1');
+
   // Teams — team-scoped RBAC (see services/teamScope.js): analysts only see their team's
   // items plus unassigned ones, so seed a couple of teams with real members/agents to make
   // that actually demonstrable rather than everything landing in the shared inbox.
-  const insTeam = d.prepare('INSERT INTO teams(id, name, description) VALUES(?,?,?)');
+  const insTeam = d.prepare('INSERT INTO teams(id, name, description, tenant_id) VALUES(?,?,?,?)');
   const teamBlue = uuidv4(), teamRed = uuidv4();
-  await insTeam.run(teamBlue, 'Blue Team', 'Defensive monitoring and incident response');
-  await insTeam.run(teamRed, 'Red Team', 'Offensive security and adversary emulation');
+  await insTeam.run(teamBlue, 'Blue Team', 'Defensive monitoring and incident response', DEFAULT_TENANT_ID);
+  await insTeam.run(teamRed, 'Red Team', 'Offensive security and adversary emulation', DEFAULT_TENANT_ID);
   console.log('[Seed] Teams: 2');
 
   // Users
   const pwHash = bcrypt.hashSync('K3@2026', 10);
-  const insU = d.prepare(`INSERT INTO users(id,username,email,password_hash,role,full_name,department,team_id) VALUES(?,?,?,?,?,?,?,?)`);
+  const insU = d.prepare(`INSERT INTO users(id,username,email,password_hash,role,full_name,department,team_id,tenant_id) VALUES(?,?,?,?,?,?,?,?,?)`);
   for (const r of [
-    [uuidv4(),'pbasnet','pbasnet@k3siem.local',pwHash,'admin','Prem Basnet','Security Operations',null],
-    [uuidv4(),'jmaharjan','jmaharjan@k3siem.local',pwHash,'t2_analyst','Jenan Maharjan','Security Operations',teamBlue],
-    [uuidv4(),'bpaudel','bpaudel@k3siem.local',pwHash,'t2_analyst','Bamdev Paudel','Security Operations',teamRed],
-    [uuidv4(),'analyst1','analyst1@k3siem.local',pwHash,'t1_analyst','SOC Analyst','Security Operations',teamBlue],
+    [uuidv4(),'pbasnet','pbasnet@k3siem.local',pwHash,'admin','Prem Basnet','Security Operations',null,DEFAULT_TENANT_ID],
+    [uuidv4(),'jmaharjan','jmaharjan@k3siem.local',pwHash,'t2_analyst','Jenan Maharjan','Security Operations',teamBlue,DEFAULT_TENANT_ID],
+    [uuidv4(),'bpaudel','bpaudel@k3siem.local',pwHash,'t2_analyst','Bamdev Paudel','Security Operations',teamRed,DEFAULT_TENANT_ID],
+    [uuidv4(),'analyst1','analyst1@k3siem.local',pwHash,'t1_analyst','SOC Analyst','Security Operations',teamBlue,DEFAULT_TENANT_ID],
   ]) await insU.run(...r);
   console.log('[Seed] Users: 4');
 
@@ -293,17 +299,19 @@ async function seed() {
   // Intel feeds
   const insFeed = d.prepare(`INSERT INTO intel_feeds(id,name,url,type,status,last_sync,ioc_count) VALUES(?,?,?,?,?,?,?)`);
   for (const [name,url,type,status,sync,count] of [
-    ['MISP Instance','https://misp.example.com','STIX/TAXII','active',ago(120000),847],
-    ['VirusTotal API','https://www.virustotal.com/api','REST','active',ago(300000),12043],
-    ['AbuseIPDB','https://api.abuseipdb.com','REST','active',ago(60000),5821],
-    ['OTX AlienVault','https://otx.alienvault.com/api','REST','active',ago(480000),3219],
-    ['Recorded Future','https://api.recordedfuture.com','REST','active',ago(720000),9871],
-    ['NVD NIST CVE','https://nvd.nist.gov/feeds','XML','active',ago(3600000),2341],
+    ['AbuseIPDB','https://api.abuseipdb.com/api/v2/blacklist?limit=100&confidenceMinimum=75','REST',process.env.ABUSEIPDB_API_KEY ? 'ready' : 'requires_config',null,0],
+    ['OTX AlienVault','https://otx.alienvault.com/api/v1/pulses/subscribed?limit=20','REST',process.env.OTX_API_KEY ? 'ready' : 'requires_config',null,0],
+    ['OpenPhish Community','https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt','TXT','ready',null,0],
+    ['PhishTank Verified Online','http://data.phishtank.com/data/online-valid.json','JSON','ready',null,0],
+    ['Spamhaus DROP IPv4','https://www.spamhaus.org/drop/drop_v4.json','NDJSON','ready',null,0],
+    ['Spamhaus DROP IPv6','https://www.spamhaus.org/drop/drop_v6.json','NDJSON','ready',null,0],
+    ['Feodo Tracker Recommended','https://feodotracker.abuse.ch/downloads/ipblocklist_recommended.txt','TXT','ready',null,0],
+    ['SSLBL JA3','https://sslbl.abuse.ch/blacklist/ja3_fingerprints.csv','CSV','ready',null,0],
   ]) await insFeed.run(uuidv4(),name,url,type,status,sync,count);
-  console.log('[Seed] Intel feeds: 6');
+  console.log('[Seed] Intel feeds: 8');
 
   // Agents + Assets
-  const insAgent = d.prepare('INSERT INTO agents(id, hostname, os, ip, status, agent_version, tags, collected_sources, events_sent, last_heartbeat, team_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)');
+  const insAgent = d.prepare('INSERT INTO agents(id, hostname, os, ip, status, agent_version, tags, collected_sources, events_sent, last_heartbeat, team_id, tenant_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)');
   const insAsset = d.prepare('INSERT INTO assets(id, agent_id, hostname, os_name, os_version, os_arch, cpu_model, cpu_cores, ram_total_gb, disk_total_gb, disk_used_gb, network_interfaces, installed_software, running_services, open_ports, local_users, antivirus_status, firewall_enabled, last_patch_date, uptime_hours, domain, serial_number) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
 
   const agentsData = [
@@ -346,7 +354,7 @@ async function seed() {
 
   for (const ag of agentsData) {
     const agId = uuidv4();
-    await insAgent.run(agId, ag.hostname, ag.os, ag.ip, 'offline', ag.version, JSON.stringify([]), JSON.stringify(ag.sources), ag.events, ago(rand(60000, 600000)), ag.team || null);
+    await insAgent.run(agId, ag.hostname, ag.os, ag.ip, 'offline', ag.version, JSON.stringify([]), JSON.stringify(ag.sources), ag.events, ago(rand(60000, 600000)), ag.team || null, DEFAULT_TENANT_ID);
     const a = ag.asset;
     await insAsset.run(uuidv4(), agId, ag.hostname, a.os_name, a.os_version, a.os_arch, a.cpu_model, a.cpu_cores, a.ram, a.disk, a.disk_used, JSON.stringify(a.net), JSON.stringify(a.sw), JSON.stringify(a.svc), JSON.stringify(a.ports), JSON.stringify(a.users), a.av, a.fw, a.patch, a.uptime, a.domain, a.serial);
   }
@@ -356,7 +364,7 @@ async function seed() {
   // pool (WS-001, SRV-001, below) — without these, the team scope's asset->agent hostname
   // join has nothing to match and every seeded alert would land in the unassigned inbox.
   for (const { hostname, team } of [{ hostname: 'WS-001', team: teamBlue }, { hostname: 'SRV-001', team: teamRed }]) {
-    await insAgent.run(uuidv4(), hostname, 'Windows 11 Pro', '192.168.1.50', 'offline', '1.0.0', JSON.stringify([]), JSON.stringify([]), 0, ago(rand(60000, 600000)), team);
+    await insAgent.run(uuidv4(), hostname, 'Windows 11 Pro', '192.168.1.50', 'offline', '1.0.0', JSON.stringify([]), JSON.stringify([]), 0, ago(rand(60000, 600000)), team, DEFAULT_TENANT_ID);
   }
   console.log('[Seed] Team-scoping demo agents: 2 (WS-001 -> Blue Team, SRV-001 -> Red Team)');
 

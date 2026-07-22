@@ -2,6 +2,7 @@
 const { v4: uuidv4 } = require('uuid');
 const { chInsert } = require('../models/clickhouse');
 const { matchIOCs } = require('./iocMatcher');
+const { parseLogRecord, toOCSF } = require('./ocsfParser');
 const { buildRealtimeAlerts, persistRealtimeAlerts } = require('./realtimeAlerts');
 
 const rand=(a,b)=>Math.floor(Math.random()*(b-a+1))+a;
@@ -42,11 +43,45 @@ function startIngestion(ms=3000) {
   interval = setInterval(() => {
     (async () => {
       const batch = Array.from({length:rand(1,4)}, genEvent);
-      await chInsert('events', batch.map((e) => ({
-        id: e.id, timestamp: e.timestamp, source: e.source, event_id: e.event_id, computer: e.computer,
-        username: e.username, ip_address: e.ip_address, action: e.action, severity: e.severity,
-        raw_log: e.raw_log, index_name: e.index_name, agent_id: null,
-      })));
+      await chInsert('events', batch.map((e) => {
+        const parsed = parseLogRecord({
+          timestamp: e.timestamp,
+          source: e.source,
+          event_id: e.event_id,
+          computer: e.computer,
+          username: e.username,
+          ip_address: e.ip_address,
+          action: e.action,
+          severity: e.severity,
+          raw: e.raw_log,
+          index: e.index_name,
+        });
+        const ocsf = toOCSF(parsed);
+        return {
+          id: e.id,
+          timestamp: parsed.timestamp,
+          source: parsed.source,
+          event_id: parsed.event_id,
+          computer: parsed.computer || null,
+          username: parsed.username || null,
+          ip_address: parsed.ip_address || null,
+          action: parsed.action || null,
+          severity: parsed.severity,
+          raw_log: parsed.raw,
+          index_name: parsed.index_name,
+          agent_id: null,
+          parser_profile: parsed.parser?.profile_id || null,
+          parser_vendor: parsed.parser?.vendor || null,
+          parser_product: parsed.parser?.product || null,
+          parser_family: parsed.parser?.family || null,
+          parser_device_type: parsed.parser?.device_type || null,
+          parser_format: parsed.parser?.format || null,
+          ocsf_log: JSON.stringify(ocsf),
+          ocsf_class_uid: ocsf.class_uid,
+          ocsf_class_name: ocsf.class_name,
+          ocsf_category_name: ocsf.category_name,
+        };
+      }));
 
       const newAlerts = [];
       for (const ev of batch) {

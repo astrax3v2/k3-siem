@@ -1,5 +1,6 @@
 'use strict';
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 require('./config'); // validates JWT_SECRET / INGEST_API_KEY are set; exits process if not
 const express    = require('express');
 const cors       = require('cors');
@@ -9,7 +10,6 @@ const compression= require('compression');
 const rateLimit  = require('express-rate-limit');
 const http       = require('http');
 const { WebSocketServer } = require('ws');
-const path       = require('path');
 
 const { initDb }            = require('./models/db');
 const { initClickHouse, chPing } = require('./models/clickhouse');
@@ -27,6 +27,7 @@ const deployRouter = require('./routes/deploy');
 const ocsfRouter   = require('./routes/ocsf');
 const osintRouter  = require('./routes/osint');
 const dashboardsRouter = require('./routes/dashboardLibrary');
+const tenantsRouter = require('./routes/tenants');
 const teamsRouter = require('./routes/teams');
 const usersRouter = require('./routes/users');
 const apiRouter    = require('./routes/api');
@@ -34,6 +35,12 @@ const apiRouter    = require('./routes/api');
 const app  = express();
 const PORT = process.env.PORT || 3001;
 const isProd = process.env.NODE_ENV === 'production';
+
+function isClickHouseConnRefused(error) {
+  if (!error) return false;
+  if (error.code === 'ECONNREFUSED') return true;
+  return Array.isArray(error.errors) && error.errors.some((inner) => inner && inner.code === 'ECONNREFUSED');
+}
 
 function resolveCorsOrigins() {
   const raw = process.env.CORS_ORIGIN;
@@ -75,6 +82,7 @@ app.use('/api/deploy', deployRouter);
 app.use('/api/ocsf',   ocsfRouter);
 app.use('/api/osint',  osintRouter);
 app.use('/api/dashboards', dashboardsRouter);
+app.use('/api/tenants', tenantsRouter);
 app.use('/api/teams', teamsRouter);
 app.use('/api/users', usersRouter);
 app.use('/api',        apiRouter);
@@ -148,6 +156,12 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
 start().catch((e) => {
+  if (isClickHouseConnRefused(e)) {
+    console.error('[Startup] ClickHouse is not reachable at %s', process.env.CLICKHOUSE_URL || 'http://localhost:8123');
+    console.error('[Startup] Local development requires ClickHouse. Start Docker Desktop or another local ClickHouse service, then run:');
+    console.error('[Startup]   docker start k3-clickhouse');
+    console.error('[Startup]   docker run -d --name k3-clickhouse -p 8123:8123 -p 9000:9000 clickhouse/clickhouse-server');
+  }
   console.error('[Startup] Failed', e);
   process.exit(1);
 });

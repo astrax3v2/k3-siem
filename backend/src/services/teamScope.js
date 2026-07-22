@@ -3,6 +3,7 @@
 // team, plus "unassigned" items (team_id IS NULL) which are visible to everyone as a
 // shared inbox until triaged into a team's queue.
 const { normalizeRole, ROLE_ADMIN } = require('../middleware/auth');
+const { isPlatformAdmin, scopeTenantClause, assertTenantAccess } = require('./tenantScope');
 
 function isAdmin(user) {
   return normalizeRole(user?.role) === ROLE_ADMIN;
@@ -19,9 +20,22 @@ function alertTeamJoin() {
  * Returns { clause, params } to AND onto an existing WHERE-builder's where/params
  * arrays. Admins get no restriction (clause is null — caller should skip pushing it).
  */
-function scopeClause(user, teamColumnExpr) {
-  if (isAdmin(user)) return { clause: null, params: [] };
-  return { clause: `(${teamColumnExpr} = ? OR ${teamColumnExpr} IS NULL)`, params: [user?.team_id || null] };
+function scopeClause(user, teamColumnExpr, tenantColumnExpr = null) {
+  const parts = [];
+  const params = [];
+
+  const tenantScope = scopeTenantClause(user, tenantColumnExpr);
+  if (tenantScope.clause) {
+    parts.push(tenantScope.clause);
+    params.push(...tenantScope.params);
+  }
+
+  if (!isAdmin(user)) {
+    parts.push(`(${teamColumnExpr} = ? OR ${teamColumnExpr} IS NULL)`);
+    params.push(user?.team_id || null);
+  }
+
+  return { clause: parts.length ? parts.join(' AND ') : null, params };
 }
 
 class ForbiddenError extends Error {
@@ -33,8 +47,9 @@ class ForbiddenError extends Error {
 
 // Throws if a non-admin tries to act on an item outside their team. Unassigned items
 // (itemTeamId falsy) are always allowed — same shared-inbox rule as scopeClause.
-function assertTeamAccess(user, itemTeamId) {
-  if (isAdmin(user)) return;
+function assertTeamAccess(user, itemTeamId, itemTenantId = null) {
+  assertTenantAccess(user, itemTenantId);
+  if (isPlatformAdmin(user)) return;
   if (itemTeamId && itemTeamId !== user?.team_id) {
     throw new ForbiddenError('This item belongs to another team');
   }
@@ -42,9 +57,9 @@ function assertTeamAccess(user, itemTeamId) {
 
 // Express-response-shaped wrapper: returns true if access is allowed, otherwise sends the
 // 403 response itself and returns false — callers just do `if (!guardTeamAccess(...)) return;`.
-function guardTeamAccess(res, user, itemTeamId) {
+function guardTeamAccess(res, user, itemTeamId, itemTenantId = null) {
   try {
-    assertTeamAccess(user, itemTeamId);
+    assertTeamAccess(user, itemTeamId, itemTenantId);
     return true;
   } catch (e) {
     res.status(e.status || 403).json({ error: e.message });

@@ -2,6 +2,7 @@
 // Matches ingested events against the iocs table — previously IOC `hits` never incremented
 // and no alert was ever generated from a match; IOCs were purely a CRUD list with no
 // connection to the event pipeline.
+const net = require('node:net');
 const { v4: uuidv4 } = require('uuid');
 const { db, sqlNow } = require('../models/db');
 
@@ -10,6 +11,50 @@ const URL_RE = /https?:\/\/[^\s"'<>]+/gi;
 const DOMAIN_RE = /\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b/gi;
 const EMAIL_RE = /[\w.+-]+@[\w-]+\.[\w.-]+/gi;
 const MAX_CANDIDATES_PER_TYPE = 25;
+
+function expandIpv6(ip) {
+  const [headPart, tailPart = ''] = String(ip).toLowerCase().split('::');
+  const head = headPart ? headPart.split(':').filter(Boolean) : [];
+  const tail = tailPart ? tailPart.split(':').filter(Boolean) : [];
+  const missing = 8 - (head.length + tail.length);
+  if (missing < 0) return null;
+  return [...head, ...Array.from({ length: missing }, () => '0'), ...tail]
+    .map((part) => part.padStart(4, '0'));
+}
+
+function ipToBigInt(ip) {
+  const kind = net.isIP(ip);
+  if (kind === 4) {
+    return String(ip)
+      .split('.')
+      .reduce((acc, part) => (acc << 8n) + BigInt(parseInt(part, 10) || 0), 0n);
+  }
+  if (kind === 6) {
+    const parts = expandIpv6(ip);
+    if (!parts) return null;
+    return parts.reduce((acc, part) => (acc << 16n) + BigInt(parseInt(part, 16) || 0), 0n);
+  }
+  return null;
+}
+
+function cidrContains(cidr, ip) {
+  const [base, prefixText] = String(cidr || '').split('/');
+  const prefix = parseInt(prefixText, 10);
+  const kind = net.isIP(base);
+  if (!kind || !Number.isInteger(prefix)) return false;
+  if (net.isIP(ip) !== kind) return false;
+
+  const totalBits = kind === 4 ? 32 : 128;
+  if (prefix < 0 || prefix > totalBits) return false;
+
+  const baseInt = ipToBigInt(base);
+  const ipInt = ipToBigInt(ip);
+  if (baseInt == null || ipInt == null) return false;
+  if (prefix === 0) return true;
+
+  const shift = BigInt(totalBits - prefix);
+  return shift === 0n ? baseInt === ipInt : (baseInt >> shift) === (ipInt >> shift);
+}
 
 function extractCandidates(event) {
   const out = { IP: new Set(), Hash: new Set(), URL: new Set(), Domain: new Set(), Email: new Set() };
@@ -28,6 +73,7 @@ async function matchIOCs(event) {
   const d = db();
   const candidates = extractCandidates(event);
   const hits = [];
+  const matchedIds = new Set();
 
   for (const [type, values] of Object.entries(candidates)) {
     if (!values.size) continue;
@@ -38,6 +84,8 @@ async function matchIOCs(event) {
     ).all(type, ...list);
 
     for (const ioc of matched) {
+      if (matchedIds.has(ioc.id)) continue;
+      matchedIds.add(ioc.id);
       await d.prepare(`UPDATE iocs SET hits = hits + 1, last_seen = ${sqlNow()} WHERE id = ?`).run(ioc.id);
       const alertId = uuidv4();
       await d.prepare(
@@ -48,6 +96,41 @@ async function matchIOCs(event) {
         `Event matched known IOC (source: ${ioc.source || 'internal'}, confidence ${ioc.confidence}%)${ioc.description ? ' — ' + ioc.description : ''}`,
         ioc.severity || 'High', 'New', event.source, event.computer, event.username, event.ip_address,
         'Command & Control', Math.min(99, 50 + Math.round((ioc.confidence || 50) / 2)), `ioc:${ioc.id}`
+      );
+      hits.push({ ioc, alertId });
+    }
+  }
+
+  const ipCandidates = Array.from(candidates.IP).slice(0, MAX_CANDIDATES_PER_TYPE);
+  if (ipCandidates.length) {
+    const cidrIocs = await d.prepare(
+      "SELECT * FROM iocs WHERE active = 1 AND type = 'IP' AND instr(value, '/') > 0"
+    ).all();
+
+    for (const ioc of cidrIocs) {
+      if (matchedIds.has(ioc.id)) continue;
+      const matchedIp = ipCandidates.find((candidate) => cidrContains(ioc.value, candidate));
+      if (!matchedIp) continue;
+
+      matchedIds.add(ioc.id);
+      await d.prepare(`UPDATE iocs SET hits = hits + 1, last_seen = ${sqlNow()} WHERE id = ?`).run(ioc.id);
+      const alertId = uuidv4();
+      await d.prepare(
+        `INSERT INTO alerts(id,title,description,severity,status,source,asset,username,ip_address,mitre_tactic,risk_score,rule_id)
+         VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`
+      ).run(
+        alertId,
+        `Threat Intel Match: ${ioc.type} ${ioc.value}`,
+        `Event IP ${matchedIp} matched threat-intel range ${ioc.value} (source: ${ioc.source || 'internal'}, confidence ${ioc.confidence}%)${ioc.description ? ' — ' + ioc.description : ''}`,
+        ioc.severity || 'High',
+        'New',
+        event.source,
+        event.computer,
+        event.username,
+        matchedIp,
+        'Command & Control',
+        Math.min(99, 50 + Math.round((ioc.confidence || 50) / 2)),
+        `ioc:${ioc.id}`
       );
       hits.push({ ioc, alertId });
     }

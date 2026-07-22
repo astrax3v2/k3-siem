@@ -1,5 +1,6 @@
 node_modules/
 backend/data/
+data/
 backend/.env
 backend/.env.local
 frontend/build/

@@ -51,7 +51,10 @@ export function LoginPage() {
     e.preventDefault();
     setLoading(true); setError('');
     try { await login(creds.username, creds.password); }
-    catch { setError('Invalid credentials. Try one of the demo accounts below with password K3@2026.'); }
+    catch (error) {
+      if (!error.response) setError('Backend is unreachable. Start the K3 SIEM backend on http://localhost:3001 and try again.');
+      else setError('Invalid credentials. Try one of the demo accounts below with password K3@2026.');
+    }
     finally { setLoading(false); }
   };
 

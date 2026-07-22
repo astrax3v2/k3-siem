@@ -2,7 +2,16 @@
 const path = require('path');
 const fs = require('fs');
 
-const SQLITE_DB_PATH = path.resolve(process.env.DB_PATH || './data/siem.db');
+const BACKEND_ROOT = path.resolve(__dirname, '../..');
+const DEFAULT_SQLITE_DB_PATH = path.join(BACKEND_ROOT, 'data', 'siem.db');
+
+function resolveDbPath(dbPath) {
+  if (!dbPath) return DEFAULT_SQLITE_DB_PATH;
+  return path.isAbsolute(dbPath) ? dbPath : path.resolve(BACKEND_ROOT, dbPath);
+}
+
+const SQLITE_DB_PATH = resolveDbPath(process.env.DB_PATH);
+const DEFAULT_TENANT_ID = 'tenant-default';
 let _dialect = null;
 let _sqliteRaw = null;
 let _pgPool = null;
@@ -627,6 +636,55 @@ const MIGRATIONS = [
     // the Postgres/SQLite copies so existing volumes don't keep orphaned, unwritten tables.
     name: '0022_drop_log_tables_moved_to_clickhouse',
     sql: () => `DROP TABLE IF EXISTS events; DROP TABLE IF EXISTS audit_log; DROP TABLE IF EXISTS process_nodes;`,
+  },
+  {
+    name: '0023_tenants',
+    sql: (dialect) => dialect === 'postgres'
+      ? `CREATE TABLE IF NOT EXISTS tenants (
+           id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, description TEXT,
+           is_active INTEGER DEFAULT 1, created_at TIMESTAMPTZ DEFAULT NOW()
+         )`
+      : `CREATE TABLE IF NOT EXISTS tenants (
+           id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, description TEXT,
+           is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now'))
+         )`,
+  },
+  {
+    name: '0024_users_tenant_id',
+    sql: () => `ALTER TABLE users ADD COLUMN tenant_id TEXT`,
+  },
+  {
+    name: '0025_teams_tenant_id',
+    sql: () => `ALTER TABLE teams ADD COLUMN tenant_id TEXT`,
+  },
+  {
+    name: '0026_agents_tenant_id',
+    sql: () => `ALTER TABLE agents ADD COLUMN tenant_id TEXT`,
+  },
+  {
+    name: '0027_dashboards_tenant_id',
+    sql: () => `ALTER TABLE dashboards ADD COLUMN tenant_id TEXT`,
+  },
+  {
+    name: '0028_default_tenant_backfill',
+    sql: (dialect) => `
+      ${dialect === 'postgres'
+        ? `INSERT INTO tenants(id, name, description, is_active) VALUES('${DEFAULT_TENANT_ID}', 'K3 Default Tenant', 'Bootstrap tenant for local and single-org deployments', 1) ON CONFLICT (id) DO NOTHING;`
+        : `INSERT OR IGNORE INTO tenants(id, name, description, is_active) VALUES('${DEFAULT_TENANT_ID}', 'K3 Default Tenant', 'Bootstrap tenant for local and single-org deployments', 1);`}
+      UPDATE users SET tenant_id = '${DEFAULT_TENANT_ID}' WHERE tenant_id IS NULL;
+      UPDATE teams SET tenant_id = '${DEFAULT_TENANT_ID}' WHERE tenant_id IS NULL;
+      UPDATE agents SET tenant_id = '${DEFAULT_TENANT_ID}' WHERE tenant_id IS NULL;
+      UPDATE dashboards SET tenant_id = '${DEFAULT_TENANT_ID}' WHERE tenant_id IS NULL;
+    `,
+  },
+  {
+    name: '0029_tenant_indexes',
+    sql: () => `
+      CREATE INDEX IF NOT EXISTS idx_users_tenant_id ON users(tenant_id);
+      CREATE INDEX IF NOT EXISTS idx_teams_tenant_id ON teams(tenant_id);
+      CREATE INDEX IF NOT EXISTS idx_agents_tenant_id ON agents(tenant_id);
+      CREATE INDEX IF NOT EXISTS idx_dashboards_tenant_id ON dashboards(tenant_id);
+    `,
   },
 ];
 

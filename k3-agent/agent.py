@@ -21,7 +21,10 @@ import uuid
 from datetime import datetime, timezone
 
 import requests
-import yaml
+try:
+    import yaml
+except ModuleNotFoundError:
+    yaml = None
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -44,12 +47,62 @@ DEFAULT_CONFIG = {
 }
 
 
+def _parse_scalar(value):
+    value = value.strip()
+    if not value:
+        return ""
+    if value in ("[]", "{}"):
+        return [] if value == "[]" else {}
+    if value.lower() in ("true", "false"):
+        return value.lower() == "true"
+    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+        return value[1:-1]
+    try:
+        return int(value)
+    except ValueError:
+        return value
+
+
+def _fallback_load_yaml(text):
+    data = {}
+    current_list_key = None
+
+    for raw_line in text.splitlines():
+        line = raw_line.split("#", 1)[0].rstrip()
+        if not line.strip():
+            continue
+
+        stripped = line.lstrip()
+        indent = len(line) - len(stripped)
+
+        if indent > 0 and stripped.startswith("- ") and current_list_key:
+            data.setdefault(current_list_key, []).append(_parse_scalar(stripped[2:]))
+            continue
+
+        current_list_key = None
+        if ":" not in stripped:
+            continue
+
+        key, raw_value = stripped.split(":", 1)
+        key = key.strip()
+        value = raw_value.strip()
+
+        if value:
+            data[key] = _parse_scalar(value)
+        else:
+            data[key] = []
+            current_list_key = key
+
+    return data
+
+
 def load_config(config_path="config.yaml"):
     cfg = dict(DEFAULT_CONFIG)
 
     if os.path.exists(config_path):
         with open(config_path) as f:
-            file_cfg = yaml.safe_load(f) or {}
+            raw = f.read()
+        file_cfg = (yaml.safe_load(raw) if yaml else _fallback_load_yaml(raw)) or {}
         cfg.update(file_cfg)
 
     cfg["siem_url"] = os.environ.get("K3_SIEM_URL", cfg["siem_url"]).rstrip("/")
@@ -570,20 +623,23 @@ def generate_simulated_events(profile_name, hostname, batch_size=5):
 # ---------------------------------------------------------------------------
 
 class SIEMClient:
-    def __init__(self, cfg):
+    def __init__(self, cfg, agent_id=None):
         self.base_url = cfg["siem_url"]
         self.api_key = cfg["api_key"]
-        self.agent_id = None
+        self.agent_id = agent_id
         self.session = requests.Session()
         self.session.headers.update({
             "Content-Type": "application/json",
             "X-Api-Key": self.api_key,
         })
+        if self.agent_id:
+            self.session.headers["X-Agent-Id"] = self.agent_id
 
     def register(self, hostname, os_name, ip, version, sources):
         for attempt in range(10):
             try:
                 resp = self.session.post(f"{self.base_url}/api/agents/register", json={
+                    "agent_id": self.agent_id,
                     "hostname": hostname,
                     "os": os_name,
                     "ip": ip,
@@ -1344,10 +1400,12 @@ def main():
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGTERM, shutdown)
 
-    client = SIEMClient(cfg)
+    client = SIEMClient(cfg, agent_id=state.get("agent_id"))
     if not client.register(hostname, os_name, ip, version, sources):
         print("[Agent] Failed to register after 10 attempts. Exiting.")
         sys.exit(1)
+    state["agent_id"] = client.agent_id
+    save_state(state_path, state)
 
     hb_thread = threading.Thread(target=heartbeat_loop, args=(client, cfg["heartbeat_interval"]), daemon=True)
     hb_thread.start()

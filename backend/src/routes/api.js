@@ -5,6 +5,7 @@ const { db, getDialect, sqlNow, sqlNowMinus, sqlDate } = require('../models/db')
 const { chQuery, chNowMinus } = require('../models/clickhouse');
 const { authenticate, authorize, ROLE_ADMIN, ROLE_T1, ROLE_T2 } = require('../middleware/auth');
 const { runStep } = require('../services/connectors');
+const { runOnce: runFeedSync, ensureFeedCatalog, getFeedDefinitions } = require('../services/connectors/feedSync');
 const { logAction } = require('../services/audit');
 const { computeSla } = require('../services/slaPolicy');
 const { isAdmin, alertTeamJoin, scopeClause, guardTeamAccess } = require('../services/teamScope');
@@ -129,8 +130,22 @@ router.post('/intel/iocs', authenticate, authorize(ROLE_T2, ROLE_ADMIN), async (
 });
 
 router.get('/intel/feeds', authenticate, async (req, res) => {
-  res.json({ feeds: await db().prepare('SELECT * FROM intel_feeds ORDER BY name').all() });
+  const d = db();
+  await ensureFeedCatalog(d);
+  const supported = getFeedDefinitions().map((feed) => feed.name);
+  const placeholders = supported.map(() => '?').join(',');
+  const feeds = await d.prepare(`SELECT * FROM intel_feeds WHERE name IN (${placeholders}) ORDER BY name`).all(...supported);
+  res.json({ feeds });
 });
+
+async function handleFeedSync(req, res) {
+  const result = await runFeedSync();
+  await logAction(req.user.username, 'threat_feed_sync', 'intel_feed', 'builtin', `added:${result.totals.added}`, req.ip);
+  res.json(result);
+}
+
+router.post('/intel/feeds/sync', authenticate, authorize(ROLE_T2, ROLE_ADMIN), handleFeedSync);
+router.get('/intel/feeds/sync', authenticate, authorize(ROLE_T2, ROLE_ADMIN), handleFeedSync);
 
 // ── CORRELATION ────────────────────────────────────────────────────────────
 router.get('/correlation/rules', authenticate, async (req, res) => {
@@ -142,10 +157,98 @@ router.get('/correlation/cross-hits', authenticate, async (req, res) => {
 });
 
 router.patch('/correlation/rules/:id', authenticate, authorize(ROLE_T2, ROLE_ADMIN), async (req, res) => {
-  const { enabled } = req.body;
-  await db().prepare('UPDATE correlation_rules SET enabled = ? WHERE id = ?').run(enabled?1:0, req.params.id);
-  await logAction(req.user.username, enabled ? 'rule_enabled' : 'rule_disabled', 'correlation_rule', req.params.id, null, req.ip);
-  res.json(await db().prepare('SELECT * FROM correlation_rules WHERE id = ?').get(req.params.id));
+  const d = db();
+  const existing = await d.prepare('SELECT * FROM correlation_rules WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Not found' });
+
+  const {
+    enabled,
+    name,
+    description,
+    logic,
+    severity,
+    risk_score,
+    window_minutes,
+    indices,
+    threshold,
+    conditions,
+  } = req.body || {};
+
+  const fields = [];
+  const params = [];
+  let onlyEnabledChanged = enabled !== undefined;
+
+  if (enabled !== undefined) {
+    fields.push('enabled = ?');
+    params.push(enabled ? 1 : 0);
+  }
+  if (name !== undefined) {
+    const normalizedName = String(name).trim();
+    if (!normalizedName) return res.status(400).json({ error: 'name required' });
+    fields.push('name = ?');
+    params.push(normalizedName);
+    onlyEnabledChanged = false;
+  }
+  if (description !== undefined) {
+    fields.push('description = ?');
+    params.push(description ? String(description).trim() : '');
+    onlyEnabledChanged = false;
+  }
+  if (logic !== undefined) {
+    const normalizedLogic = String(logic).trim();
+    if (!normalizedLogic) return res.status(400).json({ error: 'logic required' });
+    fields.push('logic = ?');
+    params.push(normalizedLogic);
+    onlyEnabledChanged = false;
+  }
+  if (severity !== undefined) {
+    fields.push('severity = ?');
+    params.push(severity);
+    onlyEnabledChanged = false;
+  }
+  if (risk_score !== undefined) {
+    fields.push('risk_score = ?');
+    params.push(parseInt(risk_score, 10) || 0);
+    onlyEnabledChanged = false;
+  }
+  if (window_minutes !== undefined) {
+    fields.push('window_minutes = ?');
+    params.push(parseInt(window_minutes, 10) || 1);
+    onlyEnabledChanged = false;
+  }
+  if (indices !== undefined) {
+    const normalizedIndices = Array.isArray(indices)
+      ? indices.map((item) => String(item).trim()).filter(Boolean)
+      : String(indices || '')
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+    fields.push('indices = ?');
+    params.push(JSON.stringify(normalizedIndices));
+    onlyEnabledChanged = false;
+  }
+  if (threshold !== undefined) {
+    fields.push('threshold = ?');
+    params.push(parseInt(threshold, 10) || 1);
+    onlyEnabledChanged = false;
+  }
+  if (conditions !== undefined) {
+    fields.push('conditions = ?');
+    params.push(conditions == null ? null : JSON.stringify(conditions));
+    onlyEnabledChanged = false;
+  }
+
+  if (!fields.length) return res.json(existing);
+
+  params.push(req.params.id);
+  await d.prepare(`UPDATE correlation_rules SET ${fields.join(', ')} WHERE id = ?`).run(...params);
+
+  const updated = await d.prepare('SELECT * FROM correlation_rules WHERE id = ?').get(req.params.id);
+  const action = onlyEnabledChanged
+    ? (updated.enabled ? 'rule_enabled' : 'rule_disabled')
+    : 'rule_updated';
+  await logAction(req.user.username, action, 'correlation_rule', req.params.id, updated.name, req.ip);
+  res.json(updated);
 });
 
 router.post('/correlation/rules', authenticate, authorize(ROLE_T2, ROLE_ADMIN), async (req, res) => {

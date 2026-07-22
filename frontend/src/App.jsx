@@ -6,7 +6,8 @@ import Dashboard from './components/Dashboard/Dashboard';
 import TriageCenter from './components/Triage/TriageCenter';
 import AlertManager from './components/Alerts/AlertManager';
 import KQLEngine from './components/KQL/KQLEngine';
-import { EventExplorer, IncidentResponse, Correlation, ThreatIntel, UEBA, SOAR } from './components/Pages';
+import { EventExplorer, IncidentResponse, ThreatIntel, UEBA, SOAR } from './components/Pages';
+import CorrelationManager from './components/Correlation/CorrelationManager';
 import AgentManager from './components/Agents/AgentManager';
 import AssetInventory from './components/Inventory/AssetInventory';
 import VulnerabilityScanner from './components/Inventory/VulnerabilityScanner';
@@ -42,7 +43,7 @@ function ProtectedApp() {
         <Route path="/incidents" element={<IncidentResponse />} />
         <Route path="/events" element={<EventExplorer liveEvents={liveEvents} />} />
         <Route path="/kql" element={<KQLEngine />} />
-        <Route path="/correlation" element={<Correlation />} />
+        <Route path="/correlation" element={<CorrelationManager />} />
         <Route path="/intel" element={<ThreatIntel />} />
         <Route path="/ueba" element={<UEBA />} />
         <Route path="/soar" element={<SOAR />} />

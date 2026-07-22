@@ -25,6 +25,20 @@ cd frontend
 call npm install --silent
 cd ..
 
+node -e "const http=require('http'); const req=http.get('http://127.0.0.1:8123/ping', (res) => process.exit(res.statusCode === 200 ? 0 : 1)); req.on('error', () => process.exit(1)); req.setTimeout(1500, () => { req.destroy(); process.exit(1); });" >nul 2>&1
+if %errorlevel% neq 0 (
+    echo.
+    echo [ERROR] ClickHouse is not reachable at http://localhost:8123
+    echo         Local dev in K3 SIEM requires ClickHouse for events, audit log, and process trees.
+    echo.
+    echo         Start Docker Desktop or another local ClickHouse service, then run one of:
+    echo         docker start k3-clickhouse
+    echo         docker run -d --name k3-clickhouse -p 8123:8123 -p 9000:9000 clickhouse/clickhouse-server
+    echo.
+    pause
+    exit /b 1
+)
+
 if not exist "backend\data\siem.db" (
     echo [3/3] Seeding database...
     cd backend
