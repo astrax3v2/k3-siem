@@ -31,6 +31,7 @@ export default function IncidentReportPanel({ report, onClose }) {
       onClick={onClose}
     >
       <div
+        className="print-area"
         style={{ width: 480, maxWidth: '100%', height: '100%', background: 'var(--bg)', borderLeft: '1px solid var(--border)', padding: 16, overflowY: 'auto' }}
         onClick={e => e.stopPropagation()}
       >
@@ -40,7 +41,10 @@ export default function IncidentReportPanel({ report, onClose }) {
             <div style={{ fontSize: 12, color: 'var(--text3)' }}>{incident?.title}</div>
             {generatedAt && <div style={{ fontSize: 10, color: 'var(--text3)' }}>Generated {new Date(generatedAt).toLocaleString()}</div>}
           </div>
-          <button className="btn btn-secondary btn-sm" onClick={onClose}>Close</button>
+          <div className="no-print" style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+            <button className="btn btn-secondary btn-sm" onClick={() => window.print()}>🖨️ Export PDF</button>
+            <button className="btn btn-secondary btn-sm" onClick={onClose}>Close</button>
+          </div>
         </div>
 
         <Section title="Summary">

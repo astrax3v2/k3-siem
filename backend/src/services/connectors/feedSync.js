@@ -2,11 +2,15 @@
 const cron = require('node-cron');
 const net = require('node:net');
 const { v4: uuidv4 } = require('uuid');
-const { db, sqlNow } = require('../../models/db');
+const { db, sqlNow, getDialect } = require('../../models/db');
 const abuseipdb = require('./abuseipdb');
 const otx = require('./otx');
 
 let task = null;
+// In-memory, per-feed cooldown after a 429 — avoids hammering a provider that just rate-limited
+// us again on the very next 5-minute tick. Resets on process restart, which is fine here.
+const rateLimitCooldownUntil = new Map();
+const RATE_LIMIT_COOLDOWN_MS = 20 * 60 * 1000;
 
 const OTX_TYPE_MAP = {
   IPv4: 'IP',
@@ -33,7 +37,9 @@ const FEEDS = [
   {
     name: 'OTX AlienVault',
     source: 'OTX AlienVault',
-    url: 'https://otx.alienvault.com/api/v1/pulses/subscribed?limit=20',
+    // limit=1 on purpose — on accounts subscribed to very large pulses, even a single pulse's
+    // embedded indicator list can be 10+ MB, so anything more risks the request never returning.
+    url: 'https://otx.alienvault.com/api/v1/pulses/subscribed?limit=1',
     type: 'REST',
     requiresConfig: true,
     isConfigured: () => otx.isConfigured(),
@@ -92,6 +98,51 @@ const FEEDS = [
     requiresConfig: false,
     isConfigured: () => true,
     sync: syncSslblJa3,
+  },
+  {
+    name: 'URLhaus Recent',
+    source: 'URLhaus',
+    url: 'https://urlhaus.abuse.ch/downloads/csv_recent/',
+    type: 'CSV',
+    requiresConfig: false,
+    isConfigured: () => true,
+    sync: syncUrlhaus,
+  },
+  {
+    name: 'ThreatFox Recent IOCs',
+    source: 'ThreatFox',
+    url: 'https://threatfox.abuse.ch/export/csv/recent/',
+    type: 'CSV',
+    requiresConfig: false,
+    isConfigured: () => true,
+    sync: syncThreatFox,
+  },
+  {
+    name: 'MalwareBazaar Recent Samples',
+    source: 'MalwareBazaar',
+    url: 'https://bazaar.abuse.ch/export/txt/sha256/recent/',
+    type: 'TXT',
+    requiresConfig: false,
+    isConfigured: () => true,
+    sync: syncMalwareBazaar,
+  },
+  {
+    name: 'Blocklist.de Attackers',
+    source: 'Blocklist.de',
+    url: 'https://lists.blocklist.de/lists/all.txt',
+    type: 'TXT',
+    requiresConfig: false,
+    isConfigured: () => true,
+    sync: syncBlocklistDe,
+  },
+  {
+    name: 'CINS Army List',
+    source: 'CINS Army',
+    url: 'https://cinsscore.com/list/ci-badguys.txt',
+    type: 'TXT',
+    requiresConfig: false,
+    isConfigured: () => true,
+    sync: syncCinsArmy,
   },
 ];
 
@@ -240,7 +291,10 @@ async function ensureFeedCatalog(d = db()) {
         .run(feed.url, feed.type, nextStatus || resolveCatalogStatus(feed), feed.name);
       continue;
     }
-    await d.prepare('INSERT INTO intel_feeds(id,name,url,type,status,last_sync,ioc_count) VALUES(?,?,?,?,?,?,?)')
+    const insertSql = getDialect() === 'postgres'
+      ? 'INSERT INTO intel_feeds(id,name,url,type,status,last_sync,ioc_count) VALUES(?,?,?,?,?,?,?) ON CONFLICT (name) DO NOTHING'
+      : 'INSERT OR IGNORE INTO intel_feeds(id,name,url,type,status,last_sync,ioc_count) VALUES(?,?,?,?,?,?,?)';
+    await d.prepare(insertSql)
       .run(uuidv4(), feed.name, feed.url, feed.type, resolveCatalogStatus(feed), null, 0);
   }
 }
@@ -309,8 +363,12 @@ async function syncAbuseIPDB(ctx, feed) {
 }
 
 async function syncOTX(ctx, feed) {
+  // Large accounts (many thousands of subscribed pulses) can still take a while to serve even
+  // a single pulse, since each one embeds its full indicator list — give this one more headroom
+  // than the default fetch timeout (observed up to ~36s for a 10MB single-pulse response).
   const data = await fetchJson(feed.url, {
     headers: { 'X-OTX-API-KEY': process.env.OTX_API_KEY },
+    timeoutMs: 120000,
   });
   let added = 0;
   for (const pulse of data?.results || []) {
@@ -409,6 +467,82 @@ async function syncSslblJa3(ctx, feed) {
   return markFeedSuccess(ctx, feed, added);
 }
 
+async function syncUrlhaus(ctx, feed) {
+  const text = await fetchText(feed.url);
+  let added = 0;
+  for (const line of splitLines(text)) {
+    if (line.startsWith('#')) continue;
+    const cols = parseCsvLine(line);
+    const url = cols[2];
+    if (!url) continue;
+    const threat = cols[5] || 'malware_download';
+    const isNew = await upsertIOC(ctx, 'URL', url, 85, 'High', feed.source, `URLhaus ${threat}`);
+    if (isNew) added += 1;
+  }
+  return markFeedSuccess(ctx, feed, added);
+}
+
+async function syncThreatFox(ctx, feed) {
+  const text = await fetchText(feed.url);
+  let added = 0;
+  for (const line of splitLines(text)) {
+    if (line.startsWith('#')) continue;
+    const cols = parseCsvLine(line);
+    const iocType = (cols[3] || '').toLowerCase();
+    const rawValue = cols[2];
+    if (!rawValue) continue;
+    let type = null;
+    let value = rawValue;
+    if (iocType.startsWith('ip')) { type = 'IP'; value = rawValue.split(':')[0]; }
+    else if (iocType === 'domain') type = 'Domain';
+    else if (iocType === 'url') type = 'URL';
+    else if (iocType.includes('hash')) type = 'Hash';
+    if (!type) continue;
+    const confidence = parseInt(cols[8], 10) || 75;
+    const threatType = cols[4] || 'threat';
+    const malware = cols[7] || cols[6] || '';
+    const description = `ThreatFox ${threatType}${malware ? ' — ' + malware : ''}`;
+    const isNew = await upsertIOC(ctx, type, value, confidence, confidence >= 80 ? 'Critical' : 'High', feed.source, description);
+    if (isNew) added += 1;
+  }
+  return markFeedSuccess(ctx, feed, added);
+}
+
+async function syncMalwareBazaar(ctx, feed) {
+  const text = await fetchText(feed.url);
+  let added = 0;
+  for (const rawLine of splitLines(text)) {
+    if (rawLine.startsWith('#')) continue;
+    const hash = rawLine.replace(/^"(.*)"$/, '$1').trim();
+    if (!/^[a-f0-9]{64}$/i.test(hash)) continue;
+    const isNew = await upsertIOC(ctx, 'Hash', hash, 85, 'High', feed.source, 'MalwareBazaar recent malware sample (SHA256)');
+    if (isNew) added += 1;
+  }
+  return markFeedSuccess(ctx, feed, added);
+}
+
+async function syncBlocklistDe(ctx, feed) {
+  const text = await fetchText(feed.url);
+  let added = 0;
+  for (const line of splitLines(text)) {
+    if (line.startsWith('#') || net.isIP(line) !== 4) continue;
+    const isNew = await upsertIOC(ctx, 'IP', line, 75, 'Medium', feed.source, 'Blocklist.de reported attack source');
+    if (isNew) added += 1;
+  }
+  return markFeedSuccess(ctx, feed, added);
+}
+
+async function syncCinsArmy(ctx, feed) {
+  const text = await fetchText(feed.url);
+  let added = 0;
+  for (const line of splitLines(text)) {
+    if (line.startsWith('#') || net.isIP(line) !== 4) continue;
+    const isNew = await upsertIOC(ctx, 'IP', line, 80, 'High', feed.source, 'CINS Army flagged attacker IP');
+    if (isNew) added += 1;
+  }
+  return markFeedSuccess(ctx, feed, added);
+}
+
 async function runOnce() {
   const d = db();
   await ensureFeedCatalog(d);
@@ -420,9 +554,22 @@ async function runOnce() {
       results.push(await markFeedError(ctx, feed, new Error('Feed requires API credentials')));
       continue;
     }
+    const cooldownUntil = rateLimitCooldownUntil.get(feed.name);
+    if (cooldownUntil && Date.now() < cooldownUntil) {
+      results.push(buildFeedResult(feed, {
+        status: 'error',
+        iocCount: ctx.sourceCounts[feed.source] || 0,
+        error: `Rate limited — retrying after ${new Date(cooldownUntil).toLocaleTimeString()}`,
+      }));
+      continue;
+    }
     try {
       results.push(await feed.sync(ctx, feed));
+      rateLimitCooldownUntil.delete(feed.name);
     } catch (error) {
+      if (/HTTP 429/.test(error.message)) {
+        rateLimitCooldownUntil.set(feed.name, Date.now() + RATE_LIMIT_COOLDOWN_MS);
+      }
       console.error(`[FeedSync] ${feed.name} failed:`, error.message);
       results.push(await markFeedError(ctx, feed, error));
     }
@@ -443,7 +590,8 @@ async function runOnce() {
 
 function startFeedSync() {
   if (task) return;
-  ensureFeedCatalog().catch(() => {});
+  // runOnce() already calls ensureFeedCatalog() as its first step — calling it again here,
+  // unawaited, used to race with that call on a fresh feed name and insert it twice.
   console.log('[FeedSync] Syncing threat intel feeds every 5 minutes');
   task = cron.schedule('*/5 * * * *', () => {
     runOnce().catch((error) => console.error('[FeedSync] Scheduled sync failed:', error.message));

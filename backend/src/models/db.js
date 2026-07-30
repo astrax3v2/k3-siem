@@ -686,6 +686,17 @@ const MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_dashboards_tenant_id ON dashboards(tenant_id);
     `,
   },
+  {
+    // ensureFeedCatalog() and runOnce() used to both be fired without awaiting each other at
+    // startup, so on a fresh feed name both could SELECT-see-nothing and INSERT concurrently,
+    // producing duplicate intel_feeds rows (visible as a feed listed twice in Threat Intel).
+    // Dedupe what's already there and add a uniqueness guard so it can't happen again.
+    name: '0030_intel_feeds_dedupe_and_unique_name',
+    sql: () => `
+      DELETE FROM intel_feeds WHERE id NOT IN (SELECT MIN(id) FROM intel_feeds GROUP BY name);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_intel_feeds_name ON intel_feeds(name);
+    `,
+  },
 ];
 
 async function runMigrations(d) {
