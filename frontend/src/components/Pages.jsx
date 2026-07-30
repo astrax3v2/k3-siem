@@ -2,8 +2,11 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { eventsApi, correlationApi, intelApi, uebaApi, soarApi, incidentsApi } from '../services/api';
 import { useAuth } from './Layout/Auth';
+import OsintPanel from './OSINT/OsintPanel';
+import IncidentReportPanel from './Incidents/IncidentReportPanel';
 
 const SEV = { Critical: 'badge-red', High: 'badge-orange', Medium: 'badge-blue', Low: 'badge-green', Info: 'badge-gray' };
+const IOC_TYPE_TO_OSINT = { IP: 'ip', Domain: 'domain', Hash: 'hash', Email: 'email' };
 
 // ── Event Explorer ──────────────────────────────────────────────────────────
 export function EventExplorer({ liveEvents }) {
@@ -18,6 +21,7 @@ export function EventExplorer({ liveEvents }) {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const [importError, setImportError] = useState('');
+  const [osintTarget, setOsintTarget] = useState(null);
   const [filters, setFilters] = useState({
     severity: searchParams.get('severity') || '',
     source: searchParams.get('source') || '',
@@ -149,6 +153,58 @@ export function EventExplorer({ liveEvents }) {
         </div>
       </div>
 
+      {importResult?.imported > 0 && (
+        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div className="card-title">Import Analysis</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <span className="badge badge-gray">{importResult.imported} logs imported</span>
+            {(importResult.alerts_by_severity || []).map(s => (
+              <span key={s.value} className={`badge ${SEV[s.value] || 'badge-gray'}`}>{s.count} {s.value} alert{s.count === 1 ? '' : 's'}</span>
+            ))}
+            {!importResult.alerts_created && <span className="badge badge-gray">No alerts triggered</span>}
+          </div>
+
+          {importResult.ioc_hit_count > 0 ? (
+            <div>
+              <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 6 }}>Threat Intel Matches ({importResult.ioc_hit_count})</div>
+              <table>
+                <thead><tr><th>Type</th><th>Value</th><th>Severity</th><th>Confidence</th><th>Source</th></tr></thead>
+                <tbody>
+                  {importResult.ioc_hits.map((h, hi) => (
+                    <tr key={`${h.alert_id}:${hi}`}>
+                      <td><span className="badge badge-gray">{h.type}</span></td>
+                      <td style={{ fontFamily: 'monospace', fontSize: 11 }}>
+                        {IOC_TYPE_TO_OSINT[h.type] ? (
+                          <span style={{ cursor: 'pointer', color: 'var(--gold)' }} onClick={() => setOsintTarget({ type: IOC_TYPE_TO_OSINT[h.type], value: h.value })}>{h.value}</span>
+                        ) : h.value}
+                      </td>
+                      <td><span className={`badge ${SEV[h.severity] || 'badge-gray'}`}>{h.severity}</span></td>
+                      <td style={{ fontSize: 11 }}>{h.confidence}%</td>
+                      <td style={{ fontSize: 11, color: 'var(--text2)' }}>{h.source || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: 'var(--text3)' }}>No indicators in this batch matched the current threat intel feed.</div>
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+            {[['Parsers', importResult.profiles], ['Indices', importResult.indices], ['OCSF Classes', importResult.classes]].map(([label, items]) => (
+              <div key={label}>
+                <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 4 }}>{label}</div>
+                {(items || []).length === 0 ? <div style={{ fontSize: 11, color: 'var(--text3)' }}>—</div> : (items || []).map(it => (
+                  <div key={it.value} style={{ fontSize: 11, color: 'var(--text2)', display: 'flex', justifyContent: 'space-between' }}>
+                    <span>{it.value}</span><span>{it.count}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <input placeholder="Search user, computer, IP, action…" value={filters.search} onChange={e => { setFilters(f => ({ ...f, search: e.target.value })); setPage(1); }} style={{ width: 240, padding: '5px 10px', fontSize: 12 }} />
         <select value={filters.severity} onChange={e => { setFilters(f => ({ ...f, severity: e.target.value })); setPage(1); }} style={{ padding: '5px 8px', fontSize: 12 }}>
@@ -199,6 +255,10 @@ export function EventExplorer({ liveEvents }) {
         <span style={{ fontSize: 12, color: 'var(--text3)' }}>Page {page} / {pages}</span>
         <button className="btn btn-secondary btn-sm" disabled={page >= pages} onClick={() => setPage(p => p + 1)}>Next →</button>
       </div>
+
+      {osintTarget && (
+        <OsintPanel type={osintTarget.type} value={osintTarget.value} onClose={() => setOsintTarget(null)} />
+      )}
     </div>
   );
 }
@@ -787,6 +847,9 @@ export function IncidentResponse() {
   const [saving, setSaving] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [createForm, setCreateForm] = useState({ title: '', description: '', severity: 'High', priority: 2 });
+  const [report, setReport] = useState(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState('');
 
   // Keep the URL in sync so filtered/selected views from dashboards are shareable and bookmarkable.
   useEffect(() => {
@@ -821,7 +884,7 @@ export function IncidentResponse() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { loadDetail(selectedId); }, [selectedId, loadDetail]);
+  useEffect(() => { loadDetail(selectedId); setReport(null); setReportError(''); }, [selectedId, loadDetail]);
   useEffect(() => {
     const incId = location.state?.incidentId;
     if (incId) setSelectedId(incId);
@@ -847,6 +910,20 @@ export function IncidentResponse() {
       await loadDetail(selectedId);
       await load();
     } finally { setSaving(false); }
+  };
+
+  const generateReport = async () => {
+    if (!selectedId) return;
+    setReportLoading(true);
+    setReportError('');
+    try {
+      const res = await incidentsApi.report(selectedId);
+      setReport(res.data);
+    } catch (e) {
+      setReportError(e.response?.data?.error || 'Failed to generate report');
+    } finally {
+      setReportLoading(false);
+    }
   };
 
   const createIncident = async () => {
@@ -877,10 +954,10 @@ export function IncidentResponse() {
             <option value="">All Severity</option>
             {['Critical', 'High', 'Medium', 'Low'].map(s => <option key={s}>{s}</option>)}
           </select>
-          <input placeholder="Search incidents…" value={filters.search} onChange={e => { setFilters(f => ({ ...f, search: e.target.value })); setPage(1); }} style={{ width: 220, padding: '4px 10px', fontSize: 12 }} />
+          <input placeholder="Search cases…" value={filters.search} onChange={e => { setFilters(f => ({ ...f, search: e.target.value })); setPage(1); }} style={{ width: 220, padding: '4px 10px', fontSize: 12 }} />
           <button className="btn btn-secondary btn-sm" onClick={load}>🔄 Refresh</button>
-          <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }} onClick={() => setShowCreate(s => !s)}>+ New Incident</button>
-          <span style={{ fontSize: 11, color: 'var(--text3)' }}>{total} incidents</span>
+          <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }} onClick={() => setShowCreate(s => !s)}>+ New Case</button>
+          <span style={{ fontSize: 11, color: 'var(--text3)' }}>{total} cases</span>
         </div>
 
         {activeFilterChips.length > 0 && (
@@ -897,9 +974,9 @@ export function IncidentResponse() {
 
         {showCreate && (
           <div className="card">
-            <div className="card-title">Create Incident</div>
+            <div className="card-title">Create Case</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 120px', gap: 8, marginBottom: 8 }}>
-              <input placeholder="Incident title" value={createForm.title} onChange={e => setCreateForm(f => ({ ...f, title: e.target.value }))} style={{ padding: '6px 10px' }} />
+              <input placeholder="Case title" value={createForm.title} onChange={e => setCreateForm(f => ({ ...f, title: e.target.value }))} style={{ padding: '6px 10px' }} />
               <select value={createForm.severity} onChange={e => setCreateForm(f => ({ ...f, severity: e.target.value }))} style={{ padding: '6px 10px' }}>
                 {['Critical', 'High', 'Medium', 'Low'].map(s => <option key={s}>{s}</option>)}
               </select>
@@ -950,7 +1027,7 @@ export function IncidentResponse() {
       {inc && (
         <div style={{ width: 340, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div className="card">
-            <div className="card-title">Incident Detail</div>
+            <div className="card-title">Case Detail</div>
             <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>{inc.title}</div>
             {inc.description && <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 10, lineHeight: 1.5 }}>{inc.description}</div>}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12 }}>
@@ -965,6 +1042,11 @@ export function IncidentResponse() {
                 🌳 View Process Tree ({detail.process_tree.length} stages)
               </button>
             )}
+
+            <button className="btn btn-secondary btn-sm" style={{ width: '100%', marginTop: 8 }} disabled={reportLoading} onClick={generateReport}>
+              {reportLoading ? 'Generating…' : '📋 Generate Report'}
+            </button>
+            {reportError && <div style={{ fontSize: 11, color: '#fc8181', marginTop: 6 }}>{reportError}</div>}
 
             <div style={{ marginTop: 10 }}>
               <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 6 }}>Update Status</div>
@@ -1019,6 +1101,8 @@ export function IncidentResponse() {
           </div>
         </div>
       )}
+
+      {report && <IncidentReportPanel report={report} onClose={() => setReport(null)} />}
     </div>
   );
 }

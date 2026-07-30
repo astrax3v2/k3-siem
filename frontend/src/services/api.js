@@ -124,6 +124,7 @@ export const incidentsApi = {
   create: (data) => api.post('/incidents', data),
   createFromAlert: (alertId) => api.post(`/incidents/from-alert/${alertId}`),
   get: (id) => api.get(`/incidents/${id}`),
+  report: (id) => api.get(`/incidents/${id}/report`),
   update: (id, data) => api.patch(`/incidents/${id}`, data),
   addNote: (id, note) => api.post(`/incidents/${id}/notes`, { note }),
   linkAlert: (id, alertId) => api.post(`/incidents/${id}/alerts`, { alert_id: alertId }),

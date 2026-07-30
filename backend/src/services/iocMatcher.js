@@ -94,7 +94,7 @@ async function matchIOCs(event) {
       ).run(
         alertId, `Threat Intel Match: ${ioc.type} ${ioc.value}`,
         `Event matched known IOC (source: ${ioc.source || 'internal'}, confidence ${ioc.confidence}%)${ioc.description ? ' — ' + ioc.description : ''}`,
-        ioc.severity || 'High', 'New', event.source, event.computer, event.username, event.ip_address,
+        ioc.severity || 'High', 'New', event.source ?? null, event.computer ?? null, event.username ?? null, event.ip_address ?? null,
         'Command & Control', Math.min(99, 50 + Math.round((ioc.confidence || 50) / 2)), `ioc:${ioc.id}`
       );
       hits.push({ ioc, alertId });
@@ -124,9 +124,9 @@ async function matchIOCs(event) {
         `Event IP ${matchedIp} matched threat-intel range ${ioc.value} (source: ${ioc.source || 'internal'}, confidence ${ioc.confidence}%)${ioc.description ? ' — ' + ioc.description : ''}`,
         ioc.severity || 'High',
         'New',
-        event.source,
-        event.computer,
-        event.username,
+        event.source ?? null,
+        event.computer ?? null,
+        event.username ?? null,
         matchedIp,
         'Command & Control',
         Math.min(99, 50 + Math.round((ioc.confidence || 50) / 2)),
