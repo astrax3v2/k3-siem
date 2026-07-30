@@ -1,7 +1,7 @@
 'use strict';
 const cron = require('node-cron');
 const net = require('node:net');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID: uuidv4 } = require('crypto');
 const { db, sqlNow, getDialect } = require('../../models/db');
 const abuseipdb = require('./abuseipdb');
 const otx = require('./otx');

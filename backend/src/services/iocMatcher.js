@@ -3,7 +3,7 @@
 // and no alert was ever generated from a match; IOCs were purely a CRUD list with no
 // connection to the event pipeline.
 const net = require('node:net');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID: uuidv4 } = require('crypto');
 const { db, sqlNow } = require('../models/db');
 
 const HASH_RE = /\b[a-fA-F0-9]{32}\b|\b[a-fA-F0-9]{40}\b|\b[a-fA-F0-9]{64}\b/g;

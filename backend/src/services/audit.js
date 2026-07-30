@@ -1,5 +1,5 @@
 'use strict';
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID: uuidv4 } = require('crypto');
 const { chInsert } = require('../models/clickhouse');
 
 async function logAction(actor, action, entityType, entityId, detail, ipAddress) {

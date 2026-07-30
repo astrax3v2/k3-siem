@@ -1,6 +1,6 @@
 'use strict';
 const express = require('express');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID: uuidv4 } = require('crypto');
 const { db, sqlNowMinus } = require('../models/db');
 const { chQuery } = require('../models/clickhouse');
 const { authenticate, authorize } = require('../middleware/auth');
@@ -201,7 +201,7 @@ router.post('/:id/inventory', apiKeyAuth, async (req, res) => {
       .run(inv.hostname || agent.hostname, inv.os_name, inv.os_version, inv.os_arch, inv.cpu_model, inv.cpu_cores || 0, inv.ram_total_gb || 0, inv.disk_total_gb || 0, inv.disk_used_gb || 0, JSON.stringify(inv.network_interfaces || []), JSON.stringify(inv.installed_software || []), JSON.stringify(inv.running_services || []), JSON.stringify(inv.open_ports || []), JSON.stringify(inv.local_users || []), inv.antivirus_status || 'Unknown', inv.firewall_enabled ? 1 : 0, inv.last_patch_date || null, inv.uptime_hours || 0, inv.domain || null, inv.serial_number || null, now, id);
     res.json({ status: 'updated' });
   } else {
-    const assetId = require('uuid').v4();
+    const assetId = require('crypto').randomUUID();
     await d.prepare(`INSERT INTO assets(id, agent_id, hostname, os_name, os_version, os_arch, cpu_model, cpu_cores, ram_total_gb, disk_total_gb, disk_used_gb, network_interfaces, installed_software, running_services, open_ports, local_users, antivirus_status, firewall_enabled, last_patch_date, uptime_hours, domain, serial_number, collected_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(assetId, id, inv.hostname || agent.hostname, inv.os_name, inv.os_version, inv.os_arch, inv.cpu_model, inv.cpu_cores || 0, inv.ram_total_gb || 0, inv.disk_total_gb || 0, inv.disk_used_gb || 0, JSON.stringify(inv.network_interfaces || []), JSON.stringify(inv.installed_software || []), JSON.stringify(inv.running_services || []), JSON.stringify(inv.open_ports || []), JSON.stringify(inv.local_users || []), inv.antivirus_status || 'Unknown', inv.firewall_enabled ? 1 : 0, inv.last_patch_date || null, inv.uptime_hours || 0, inv.domain || null, inv.serial_number || null, now, now);
     res.status(201).json({ status: 'created', asset_id: assetId });
@@ -254,7 +254,7 @@ router.post('/:id/vulnerabilities', apiKeyAuth, async (req, res) => {
   const now = new Date().toISOString();
   for (const v of vulnerabilities) {
     try {
-      const vid = require('uuid').v4();
+      const vid = require('crypto').randomUUID();
       await d.prepare(`INSERT INTO vulnerabilities(id, agent_id, cve_id, software_name, software_version, software_type, description, cvss_score, severity, published, last_modified, vuln_status, scanned_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`)
         .run(vid, id, v.cve_id, v.software_name || null, v.software_version || null, v.software_type || 'software', v.description || null, v.cvss_score != null ? v.cvss_score : null, (v.severity || 'UNKNOWN').toUpperCase(), v.published || null, v.last_modified || null, v.vuln_status || null, now);
       stored++;

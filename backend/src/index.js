@@ -61,7 +61,7 @@ app.use(cors({ origin: resolveCorsOrigins(), credentials: true }));
 app.use(compression());
 app.use(morgan('dev'));
 app.use(express.json({ limit: '10mb' }));
-app.use(rateLimit({ windowMs: 15*60*1000, max: 1000 }));
+app.use(rateLimit({ windowMs: 15*60*1000, limit: 1000 }));
 
 // Liveness: process is up, no dependency checks. Readiness: can actually serve traffic (DB reachable).
 app.get('/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
@@ -89,7 +89,8 @@ app.use('/api',        apiRouter);
 
 if (isProd) {
   app.use(express.static(path.join(__dirname,'../../frontend/build')));
-  app.get('*', (_,res) => res.sendFile(path.join(__dirname,'../../frontend/build/index.html')));
+  // Express 5 (path-to-regexp v8) requires a named wildcard instead of a bare '*'.
+  app.get('/*splat', (_,res) => res.sendFile(path.join(__dirname,'../../frontend/build/index.html')));
 }
 
 const server = http.createServer(app);

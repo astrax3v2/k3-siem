@@ -4,7 +4,7 @@
 // rules were stored in the DB (and toggleable in the UI) but never actually evaluated;
 // alerting was instead hardcoded per-event-type in ingestion.js.
 const cron = require('node-cron');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID: uuidv4 } = require('crypto');
 const { db, sqlNow, sqlNowMinus } = require('../models/db');
 const { chQuery, chNowMinus } = require('../models/clickhouse');
 

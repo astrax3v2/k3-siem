@@ -1,7 +1,7 @@
 'use strict';
 const fs = require('fs/promises');
 const express = require('express');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID: uuidv4 } = require('crypto');
 const { db } = require('../models/db');
 const { chQuery, chInsert, chNowMinus } = require('../models/clickhouse');
 const { authenticate } = require('../middleware/auth');

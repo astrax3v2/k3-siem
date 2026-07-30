@@ -4,7 +4,7 @@
 // Statistical baselining (histograms, z-scores), not ML — appropriate for a SIEM where
 // analysts need to understand *why* a score fired.
 const cron = require('node-cron');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID: uuidv4 } = require('crypto');
 const { db, sqlNow } = require('../models/db');
 const { chQuery, chNowMinus, chDate } = require('../models/clickhouse');
 const { lookupGeo, haversineKm } = require('./geoip');

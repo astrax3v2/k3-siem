@@ -8,7 +8,7 @@
 // Deliberate scope cut: the window/threshold below are fixed constants, not a rule-builder UI —
 // keeps this shippable without inventing a second rules schema on top of correlation_rules.
 const cron = require('node-cron');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID: uuidv4 } = require('crypto');
 const { db, getDialect, sqlNow, sqlNowMinus } = require('../models/db');
 
 const WINDOW_MINUTES = 15;
