@@ -7,6 +7,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Automated incident analysis reporting** - a one-click "Generate Report" action on any case
+  assembles a narrative summary (entities involved, MITRE tactics observed, threat-intel
+  matches), resolves every IOC-matched alert back to its source feed/indicator/confidence via a
+  new `GET /api/incidents/:id/report` endpoint, and exports to PDF through the browser's native
+  print-to-PDF (no new dependency). Log imports get the same treatment: `POST /api/events/import`
+  now awaits IOC matching for the (bounded) batch and returns per-import threat-intel hits and a
+  severity breakdown, shown inline in Event Explorer as an "Import Analysis" panel. The live
+  agent ingestion path (`POST /api/events/ingest`) is unchanged and stays fire-and-forget on IOC
+  matching so device throughput isn't affected.
+- **OSINT lookups now render as a parsed, readable feed** instead of a raw JSON dump - geo,
+  reverse DNS, RDAP/WHOIS, VirusTotal, AbuseIPDB, and Shodan results are broken into labeled
+  fields (with a "View Raw JSON" toggle per source for the original payload).
+- **Five more keyless threat-intel feeds**: URLhaus, ThreatFox, and MalwareBazaar (abuse.ch),
+  Blocklist.de, and the CINS Army List, alongside the existing catalog - no API key required for
+  any of them. AlienVault OTX can now be activated with a free `OTX_API_KEY`.
 - **Auto log import into Discover / live dashboards** - Event Explorer now accepts pasted logs,
   uploaded files, or a backend file path and sends them through a new `POST /api/events/import`
   ingestion route. Imported logs reuse the global parser pipeline, auto-detect the log profile,
@@ -34,6 +49,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   `scripts/switch-to-live-monitoring.ps1` for local live-monitoring restarts.
 
 ### Changed
+- **Incident Response renamed to Case Management** (`/incidents` now redirects to `/cases`) and
+  the UEBA/SOAR/Vulnerabilities nav entries were removed - they had no working pages behind them.
 - **Threat-intel sync cadence** is now every 5 minutes instead of every 30 minutes, and the feed
   status panel now reflects real built-in feed rows rather than static placeholders.
 - **IOC matching** now supports CIDR/range indicators, so feeds such as Spamhaus DROP can
@@ -49,9 +66,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Demo access** now includes a seeded T1 analyst account (`analyst1` / `K3@2026`) alongside
   the existing admin and T2 analyst accounts for role-based testing.
 
+### Dependencies
+- **Backend**: Express 5, express-rate-limit 8, helmet 8.3, morgan 1.11, node-cron 4, dotenv 17,
+  bcryptjs 3, jest 30. Replaced the `uuid` package with Node's built-in `crypto.randomUUID()` -
+  `uuid` v14 dropped CommonJS support entirely, which silently broke under Jest (the live server
+  itself kept working, since modern Node can `require()` an ESM-only package directly, but Jest's
+  module loader can't) and pulled in a dependency that was no longer needed for a single function.
+  Fixed the one Express 5 breaking change this app hit: the SPA fallback route
+  (`app.get('*', ...)`) needed the new named-wildcard syntax (`app.get('/*splat', ...)`), since
+  Express 5's path-to-regexp v8 no longer accepts a bare `*`.
+- **Frontend**: React 19, react-dom 19, react-router-dom 7, recharts 3 (now pulls in
+  `@reduxjs/toolkit`/`react-redux` internally for its own state management - no app code changes
+  needed), axios 1.19. No source changes were required; verified via a clean dependency
+  reinstall, dev server, production build, and a full click-through of routing and charts.
+- Left two categories of `npm audit` findings unaddressed on purpose: the dev-only vulnerability
+  chain through Jest's bundled `glob`/`brace-expansion` (fixing it would force-downgrade Jest to
+  a much older major, and it doesn't ship to production), and the vulnerabilities inside
+  `react-scripts`' (Create React App, unmaintained since 2023) own build tooling - resolving
+  those would mean migrating off CRA entirely, which is a separate, larger effort.
+
 ### Fixed
 - **Login UX** now shows a backend-unreachable error when `localhost:3001` is down instead of
   incorrectly presenting every network failure as "Invalid credentials".
+- **IOC-matched alerts from imported logs were silently dropping** whenever the log didn't carry
+  a username/source/IP (common for plain-text log imports) - `iocMatcher.js` was passing
+  `undefined` into a SQLite bind, which threw and was swallowed by the caller's fire-and-forget
+  error handling. Threat-intel matches now always create their alert.
+- **Duplicate rows in the Threat Intel feed list** - two startup code paths both initialized the
+  feed catalog without awaiting each other, so a brand-new feed name could occasionally get
+  inserted twice. Added a migration to dedupe existing rows and a uniqueness guard to prevent it
+  from recurring.
+- **AbuseIPDB and PhishTank repeatedly erroring with HTTP 429** - the 5-minute sync was retrying
+  immediately after a rate-limit response, which just re-triggered the same limit. Added a
+  20-minute cooldown per feed after a 429.
+- **OTX AlienVault sync failing/timing out for accounts with a large number of subscribed
+  pulses** - a single pulse can embed 10+ MB of indicator data for such accounts; reduced the
+  page size and raised the fetch timeout so the sync reliably completes.
 
 ## [2.0.1] - 2026-06-30
 

@@ -70,7 +70,7 @@ K3 SIEM is a full-stack **Security Information and Event Management** platform i
     <td width="50%"><strong>Alert Manager</strong><br/><img src="docs/screenshots/alert-manager.png" alt="Alert Manager" /></td>
   </tr>
   <tr>
-    <td width="50%"><strong>Incident Response</strong><br/><img src="docs/screenshots/incident-detail.png" alt="Incident Response detail panel" /></td>
+    <td width="50%"><strong>Case Management</strong><br/><img src="docs/screenshots/incident-detail.png" alt="Case Management detail panel" /></td>
     <td width="50%"><strong>🌳 Process Tree Attack Chain Investigation</strong><br/><img src="docs/screenshots/process-tree.png" alt="Process tree attack chain" /></td>
   </tr>
   <tr>
@@ -125,17 +125,20 @@ K3 SIEM is a full-stack **Security Information and Event Management** platform i
   - "Create Incident" button to escalate
   - Risk score visualization bar
 
-### 🧯 Incident Response
-- **Create Incidents** Form with title, description, severity (Critical/High/Medium/Low), priority (P1-P4)
-- **Create from Alert** One-click incident creation from any alert
-- **Incident List** Filterable by status, severity, search with alert/note counts
+### 🧯 Case Management
+- **Create Cases** Form with title, description, severity (Critical/High/Medium/Low), priority (P1-P4)
+- **Create from Alert** One-click case creation from any alert
+- **Case List** Filterable by status, severity, search with alert/note counts
 - **6-Stage Status Workflow** Open → In Progress → Contained → Eradicated → Recovered → Closed
 - **Detail Panel** includes:
-  - Incident metadata (severity, priority, status, owner)
+  - Case metadata (severity, priority, status, owner)
   - Status progression buttons
   - **Linked Alerts Table** All associated security alerts
   - **Notes Section** Add timestamped investigation notes with author tracking
-- **🌳 Process Tree Link** Incidents with a reconstructed attack chain show a "View Process
+- **📋 Generate Report** one-click automated analysis report: a narrative summary, entities
+  involved, MITRE tactics observed, and every threat-intel-matched alert resolved back to its
+  source feed/indicator/confidence score, with a PDF export
+- **🌳 Process Tree Link** Cases with a reconstructed attack chain show a "View Process
   Tree" button opening the full investigation view (see below)
 
 ### 🌳 Process Tree / Attack Chain Investigation
@@ -157,6 +160,9 @@ to full compromise, reachable from any incident with a reconstructed attack chai
 - **Filters**: Free-text search (user/computer/IP/action), severity dropdown, index selector
 - **Log Import**: paste raw logs, upload a local logfile, or provide a backend file path for
   automatic parsing and ingestion into Discover plus the live event/alert stream
+- **📊 Import Analysis** every imported batch is matched against the live threat-intel feed and
+  shows an inline severity breakdown plus a threat-intel-matches table (type, value, severity,
+  confidence, source)
 - **5 Log Indices**: `windows-security`, `linux-syslog`, `network-flow`, `endpoint-edr`, `cloud-identity`
 - **Live Event Overlay** Top 10 new events highlighted in green with streaming indicator
 - **Columns**: Timestamp, Index badge, Source, Event ID (gold monospace), Computer, User, Action, IP, Severity badge
@@ -205,9 +211,22 @@ to full compromise, reachable from any incident with a reconstructed attack chai
 - **IOC Table**: Type badge, Indicator (monospace), Confidence bar, Severity, Hits (red if >10), Source, First Seen
 - **Manual Feed Sync** for admin and T2 analyst roles directly from the UI
 - **📡 Feed Status Panel** Feed name, feed type, IOC count, last sync time, and real status
-  - AbuseIPDB, OTX AlienVault, OpenPhish Community, PhishTank Verified Online, Spamhaus DROP IPv4/IPv6, Feodo Tracker Recommended, SSLBL JA3
+  - AbuseIPDB, OTX AlienVault, OpenPhish Community, PhishTank Verified Online, Spamhaus DROP
+    IPv4/IPv6, Feodo Tracker Recommended, SSLBL JA3, URLhaus Recent, ThreatFox Recent IOCs,
+    MalwareBazaar Recent Samples, Blocklist.de Attackers, CINS Army List — 13 feeds total,
+    149,000+ indicators tracked; every feed except AbuseIPDB and OTX AlienVault runs keyless
+  - Automatic rate-limit backoff (20 min) keeps strict-quota feeds like AbuseIPDB/PhishTank from
+    erroring out repeatedly after a 429
 - **CIDR-aware IOC matching** so netblock feeds such as Spamhaus DROP can trigger threat-intel alerts
 - **🗺️ Threat Origins** Geographic breakdown: Russia, China, N. Korea, Iran, Anonymous
+
+### 🔎 OSINT Enrichment
+- **One-click pivot** from any IP, domain, hash, or email — on an alert, a case report, or an
+  import result — to RDAP/WHOIS, geolocation, VirusTotal, AbuseIPDB, and Shodan
+- **Parsed, readable fields** per source instead of a raw JSON dump, with a "View Raw JSON"
+  toggle when the original payload is needed
+- Sources that aren't configured (no API key set) show a clear "Not configured" state rather
+  than an error
 
 ### 👤 UEBA (User & Entity Behavior Analytics)
 - **Stats**: High Risk Users, Total Anomalies, Users Monitored
@@ -348,7 +367,7 @@ k3-siem/
 │   │       └── seed.js                  # 🌱 Demo data seeder
 │   └── data/                            # SQLite database (local dev)
 │
-├── 🎨 frontend/                         # React 18 SPA
+├── 🎨 frontend/                         # React 19 SPA
 │   └── src/
 │       ├── components/
 │       │   ├── Triage/TriageCenter.jsx  # 🎯 Unified alert+incident queue (landing page)
@@ -595,7 +614,7 @@ hands you a copy-paste install script) straight from the UI. See "Remote Deploym
 | **Teams** | Admin-only CRUD; assign users and agents to a team |
 | **RBAC Scope** | T1/T2 analysts see only their team's alerts/incidents/agents, plus unassigned shared items |
 | **SLA Targets** | Critical 15m/4h · High 30m/8h · Medium 2h/24h · Low & Info 8h/72h (ack/resolve) |
-| **Breach Flags** | Shown on Triage Center, Alert Manager, and Incident Response rows and detail panels |
+| **Breach Flags** | Shown on Triage Center, Alert Manager, and Case Management rows and detail panels |
 
 ### 🌳 Process Tree
 | Feature | Details |
@@ -621,12 +640,13 @@ hands you a copy-paste install script) straight from the UI. See "Remote Deploym
 | **Results** | Table output with execution time (ms) and row count |
 | **Saved Queries** | Persist as detection rules with categories |
 
-### 🧯 Incident Response
+### 🧯 Case Management
 | Feature | Details |
 |---------|---------|
 | **Create** | Title · Description · Severity · Priority (P1-P4) |
 | **Workflow** | Open → In Progress → Contained → Eradicated → Recovered → Closed |
 | **Detail** | Metadata · Linked alerts table · Investigation notes with timestamps |
+| **Analysis Report** | One-click narrative summary · MITRE tactics · resolved threat-intel context · PDF export |
 
 ### ⚙️ SOAR Playbooks
 | Feature | Details |
@@ -639,8 +659,15 @@ hands you a copy-paste install script) straight from the UI. See "Remote Deploym
 | Feature | Details |
 |---------|---------|
 | **IOC Types** | IP · Domain · Hash · URL · Email with type badges |
-| **Feeds** | AbuseIPDB · OTX · OpenPhish · PhishTank · Spamhaus DROP v4/v6 · Feodo Tracker · SSLBL JA3 |
+| **Feeds** | AbuseIPDB · OTX AlienVault · OpenPhish · PhishTank · Spamhaus DROP v4/v6 · Feodo Tracker · SSLBL JA3 · URLhaus · ThreatFox · MalwareBazaar · Blocklist.de · CINS Army (13 total, 149K+ indicators) |
 | **Metrics** | Confidence bars · Hit counts · Threat origin map |
+
+### 🔎 OSINT Enrichment
+| Feature | Details |
+|---------|---------|
+| **Sources** | RDAP/WHOIS · Geolocation · VirusTotal · AbuseIPDB · Shodan |
+| **Display** | Parsed, labeled fields per source with a raw-JSON toggle |
+| **Entry Points** | Alert detail · Case analysis report · Import analysis results |
 
 ### 👤 UEBA
 | Feature | Details |
@@ -1015,7 +1042,7 @@ fake/simulated behavior pretending to be real.
 | Jira / ServiceNow ticketing | Real once `JIRA_*` / `SERVICENOW_*` env vars are set |
 | Email alerts | Real once `SMTP_*` / `ALERT_EMAIL_*` env vars are set |
 | CrowdStrike host isolation, Palo Alto IP blocking, MISP IOC submission | Real once their respective env vars are set (see `.env.example`) — these call your actual tenant, so test in a non-prod environment first |
-| AbuseIPDB / OTX threat-intel feed sync | Real once their API keys are set; open-source feeds (OpenPhish, PhishTank, Spamhaus DROP, Feodo Tracker, SSLBL JA3) run without paid credentials — sync runs every 5 minutes |
+| AbuseIPDB / OTX threat-intel feed sync | Real once their (free) API keys are set; the other 11 feeds (OpenPhish, PhishTank, Spamhaus DROP v4/v6, Feodo Tracker, SSLBL JA3, URLhaus, ThreatFox, MalwareBazaar, Blocklist.de, CINS Army) run without any credentials — sync runs every 5 minutes with per-feed rate-limit backoff |
 | CVE vulnerability scanning | Real — agents query the live NVD CVE API by default (5 req/30s); set `K3_NVD_API_KEY` on the agent for 50 req/30s. `K3_SIMULATE=true` agents use a curated dataset instead |
 | Geo-velocity (UEBA) | Uses the free `ip-api.com` lookup by default; set `GEOIP_DISABLED=true` for air-gapped deployments |
 
@@ -1042,18 +1069,18 @@ the SOAR execution result rather than silently pretending to succeed.
 
 | Layer | Technology | Version |
 |-------|-----------|---------|
-| 🔧 **Backend** | Node.js + Express | 22 / 4.21 |
-| 🎨 **Frontend** | React + React Router | 18.3 / 6.30 |
-| 📊 **Charts** | Recharts | 2.15 |
-| 🔌 **Real-time** | WebSocket (ws) | 8.18 |
+| 🔧 **Backend** | Node.js + Express | 22 / 5.2 |
+| 🎨 **Frontend** | React + React Router | 19.2 / 7.18 |
+| 📊 **Charts** | Recharts | 3.10 |
+| 🔌 **Real-time** | WebSocket (ws) | 8.21 |
 | 🐘 **Database** | PostgreSQL (prod) / SQLite (dev) — relational data | 16 / built-in |
 | 📈 **Log Store** | ClickHouse — events, audit_log, process_nodes | 24 |
 | 🐍 **Agent** | Python + requests + psutil + pyyaml | 3.12 |
 | 🐳 **Deployment** | Docker + Docker Compose (multi-stage, non-root, healthcheck) | — |
-| 🔐 **Auth** | JWT + bcrypt | 12h tokens |
-| 🛡️ **Security Middleware** | helmet, express-rate-limit, cors, express-validator | 8.1 / 7.5 / 2.8 / 7.2 |
+| 🔐 **Auth** | JWT + bcryptjs | 12h tokens |
+| 🛡️ **Security Middleware** | helmet, express-rate-limit, cors, express-validator | 8.3 / 8.6 / 2.8 / 7.2 |
 | 🔑 **Remote Agent Deploy** | ssh2 (SSH-based install) | 1.16 |
-| ⏱️ **Scheduling** | node-cron (retention purge) | 3.0 |
+| ⏱️ **Scheduling** | node-cron (retention purge) | 4.6 |
 | 🛡️ **CVE Scanning** | NVD CVE REST API (`services.nvd.nist.gov`) | REST 2.0 |
 | 🧬 **Log Normalization** | Custom OCSF schema mapper | OCSF 1.3.0 |
 | 🧪 **Testing** | Jest + Supertest | 29.7 / 7.0 |
