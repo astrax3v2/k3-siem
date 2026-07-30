@@ -1,6 +1,6 @@
 'use strict';
 const express = require('express');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID: uuidv4 } = require('crypto');
 const { db, getDialect, sqlNow, sqlNowMinus, sqlDate } = require('../models/db');
 const { chQuery, chNowMinus } = require('../models/clickhouse');
 const { authenticate, authorize, ROLE_ADMIN, ROLE_T1, ROLE_T2 } = require('../middleware/auth');

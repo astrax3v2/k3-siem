@@ -2,7 +2,7 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID: uuidv4 } = require('crypto');
 const { db } = require('../models/db');
 const { authenticate, authorize } = require('../middleware/auth');
 const { deployViaSSH, generateInstallScript, getAgentFiles, NATIVE_INSTALLER_FILENAMES } = require('../services/deployer');
