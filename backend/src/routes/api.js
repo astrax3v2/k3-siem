@@ -436,6 +436,84 @@ router.get('/incidents/:id', authenticate, async (req, res) => {
   res.json({ incident: withSla(incident), alerts, notes, process_tree: processTree });
 });
 
+// Assembles a detailed analysis report from data the pipeline already produced (correlated
+// alerts, threat-intel IOC matches, MITRE coverage) rather than running any new analysis —
+// the narrative is a template built from that data, not an LLM call.
+router.get('/incidents/:id/report', authenticate, async (req, res) => {
+  const d = db();
+  const incident = await d.prepare('SELECT i.*, t.name as team_name FROM incidents i LEFT JOIN teams t ON t.id = i.team_id WHERE i.id = ?').get(req.params.id);
+  if (!incident) return res.status(404).json({ error: 'Not found' });
+  if (!guardTeamAccess(res, req.user, incident.team_id)) return;
+
+  const alerts = await d.prepare(`
+    SELECT a.*
+    FROM incident_alerts ia
+    JOIN alerts a ON a.id = ia.alert_id
+    WHERE ia.incident_id = ?
+    ORDER BY a.created_at DESC
+  `).all(req.params.id);
+  const notes = await d.prepare('SELECT * FROM incident_notes WHERE incident_id = ? ORDER BY created_at DESC').all(req.params.id);
+  const processTree = await chQuery('SELECT * FROM process_nodes WHERE incident_id = {incident_id:String} ORDER BY sequence', { incident_id: req.params.id });
+
+  // rule_id on IOC-match alerts is the free-text `ioc:<uuid>` iocMatcher.js writes — resolve
+  // it back to the ioc row in JS rather than a dialect-specific SUBSTR/split_part in SQL.
+  const iocIds = [...new Set(
+    alerts.filter(a => String(a.rule_id || '').startsWith('ioc:')).map(a => a.rule_id.slice(4))
+  )];
+  const iocMap = new Map();
+  if (iocIds.length) {
+    const placeholders = iocIds.map(() => '?').join(',');
+    const iocRows = await d.prepare(`SELECT * FROM iocs WHERE id IN (${placeholders})`).all(...iocIds);
+    for (const row of iocRows) iocMap.set(row.id, row);
+  }
+  const alertsWithContext = alerts.map(a => {
+    const iocId = String(a.rule_id || '').startsWith('ioc:') ? a.rule_id.slice(4) : null;
+    return { ...a, ioc: iocId ? iocMap.get(iocId) || null : null };
+  });
+
+  const entities = {
+    assets: [...new Set(alerts.map(a => a.asset).filter(Boolean))],
+    users: [...new Set(alerts.map(a => a.username).filter(Boolean))],
+    ips: [...new Set(alerts.map(a => a.ip_address).filter(Boolean))],
+  };
+  const mitre = [...new Set(alerts.map(a => a.mitre_tactic).filter(Boolean))];
+
+  const iocAlerts = alertsWithContext.filter(a => a.ioc);
+  const iocSummaryMap = new Map();
+  for (const a of iocAlerts) {
+    const key = a.ioc.type;
+    if (!iocSummaryMap.has(key)) iocSummaryMap.set(key, { type: key, count: 0, iocs: new Set() });
+    const entry = iocSummaryMap.get(key);
+    entry.count += 1;
+    entry.iocs.add(a.ioc.value);
+  }
+  const iocSummary = [...iocSummaryMap.values()].map(e => ({ type: e.type, count: e.count, values: [...e.iocs] }));
+
+  const narrative = [
+    `Incident "${incident.title}" (${incident.severity}) involves ${alerts.length} alert${alerts.length === 1 ? '' : 's'}`,
+    entities.assets.length || entities.users.length
+      ? ` across ${entities.assets.length} asset${entities.assets.length === 1 ? '' : 's'} and ${entities.users.length} user${entities.users.length === 1 ? '' : 's'}.`
+      : '.',
+    iocAlerts.length
+      ? ` ${iocAlerts.length} alert${iocAlerts.length === 1 ? '' : 's'} matched known threat-intel indicators (${iocSummary.map(s => s.type).join(', ')}).`
+      : ' No alerts in this incident matched a known threat-intel indicator.',
+    mitre.length ? ` Observed MITRE tactics: ${mitre.join(', ')}.` : '',
+    ` Status: ${incident.status}, owner: ${incident.owner || 'unassigned'}.`,
+  ].join('');
+
+  res.json({
+    incident: withSla(incident),
+    alerts: alertsWithContext,
+    notes,
+    process_tree: processTree,
+    entities,
+    mitre,
+    ioc_summary: iocSummary,
+    narrative,
+    generated_at: new Date().toISOString(),
+  });
+});
+
 router.patch('/incidents/:id', authenticate, authorize(ROLE_T1, ROLE_T2, ROLE_ADMIN), async (req, res) => {
   const d = db();
   const existing = await d.prepare('SELECT id, team_id FROM incidents WHERE id = ?').get(req.params.id);

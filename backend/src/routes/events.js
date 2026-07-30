@@ -141,7 +141,7 @@ async function resolveImportLogs({ content, file_path: filePath }) {
   return { logs: parseInlineImportContent(raw), source: resolvedPath };
 }
 
-async function ingestLogs(logs, { agentId = null } = {}) {
+async function ingestLogs(logs, { agentId = null, awaitIoc = false } = {}) {
   const parsedLogs = buildParsedLogs(logs, agentId);
   const rows = buildRows(parsedLogs);
   try {
@@ -172,16 +172,25 @@ async function ingestLogs(logs, { agentId = null } = {}) {
     broadcast('alerts', alerts.slice(0, 50));
   }
 
-  // IOC matching runs after the response is queued so ingestion latency isn't gated on it.
-  Promise.all(parsedLogs.map(({ original, parsed }) => matchIOCs({
+  const iocMatchCalls = parsedLogs.map(({ original, parsed }) => matchIOCs({
     source: parsed?.source || original.source,
     computer: parsed?.computer || original.computer,
     username: parsed?.username || original.username,
     ip_address: parsed?.ip_address || original.ip_address,
     raw_log: parsed?.raw || (typeof original.raw === 'string' ? original.raw : JSON.stringify(original)),
-  }).catch(() => []))).catch(() => {});
+  }).catch(() => []));
 
-  return { rows, parsedLogs, alerts };
+  // Bounded imports can afford to wait for IOC matching so the response can report hits;
+  // the live agent pipeline (/ingest) cannot — matching runs after the response there so
+  // ingestion latency isn't gated on it.
+  let iocHits = [];
+  if (awaitIoc) {
+    iocHits = (await Promise.all(iocMatchCalls)).flat();
+  } else {
+    Promise.all(iocMatchCalls).catch(() => {});
+  }
+
+  return { rows, parsedLogs, alerts, iocHits };
 }
 
 router.post('/ingest', async (req, res) => {
@@ -207,7 +216,7 @@ router.post('/import', authenticate, async (req, res) => {
       return res.status(400).json({ error: `Too many log entries (${logs.length}). Max allowed is ${MAX_IMPORT_RECORDS}` });
     }
 
-    const { rows, alerts } = await ingestLogs(logs);
+    const { rows, alerts, iocHits } = await ingestLogs(logs, { awaitIoc: true });
     res.json({
       imported: rows.length,
       alerts_created: alerts.length,
@@ -215,6 +224,12 @@ router.post('/import', authenticate, async (req, res) => {
       profiles: summarizeBy(rows, 'parser_profile'),
       indices: summarizeBy(rows, 'index_name'),
       classes: summarizeBy(rows, 'ocsf_class_name'),
+      alerts_by_severity: summarizeBy(alerts, 'severity'),
+      ioc_hits: iocHits.map(h => ({
+        alert_id: h.alertId, ioc_id: h.ioc.id, type: h.ioc.type, value: h.ioc.value,
+        severity: h.ioc.severity, confidence: h.ioc.confidence, source: h.ioc.source,
+      })),
+      ioc_hit_count: iocHits.length,
       status: 'ok',
     });
   } catch (e) {

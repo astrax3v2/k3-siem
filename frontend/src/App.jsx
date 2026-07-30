@@ -6,11 +6,10 @@ import Dashboard from './components/Dashboard/Dashboard';
 import TriageCenter from './components/Triage/TriageCenter';
 import AlertManager from './components/Alerts/AlertManager';
 import KQLEngine from './components/KQL/KQLEngine';
-import { EventExplorer, IncidentResponse, ThreatIntel, UEBA, SOAR } from './components/Pages';
+import { EventExplorer, IncidentResponse, ThreatIntel } from './components/Pages';
 import CorrelationManager from './components/Correlation/CorrelationManager';
 import AgentManager from './components/Agents/AgentManager';
 import AssetInventory from './components/Inventory/AssetInventory';
-import VulnerabilityScanner from './components/Inventory/VulnerabilityScanner';
 import OCSFParser from './components/OCSF/OCSFParser';
 import ProcessTree from './components/Investigation/ProcessTree';
 import DashboardGallery from './components/Dashboards/DashboardGallery';
@@ -40,16 +39,17 @@ function ProtectedApp() {
         <Route path="/" element={<TriageCenter liveAlerts={liveAlerts} />} />
         <Route path="/overview" element={<Dashboard liveEvents={liveEvents} liveAlerts={liveAlerts} />} />
         <Route path="/alerts" element={<AlertManager liveAlerts={liveAlerts} />} />
-        <Route path="/incidents" element={<IncidentResponse />} />
+        <Route path="/cases" element={<IncidentResponse />} />
+        <Route path="/incidents" element={<Navigate to="/cases" replace />} />
         <Route path="/events" element={<EventExplorer liveEvents={liveEvents} />} />
         <Route path="/kql" element={<KQLEngine />} />
         <Route path="/correlation" element={<CorrelationManager />} />
         <Route path="/intel" element={<ThreatIntel />} />
-        <Route path="/ueba" element={<UEBA />} />
-        <Route path="/soar" element={<SOAR />} />
+        <Route path="/ueba" element={<Navigate to="/cases" replace />} />
+        <Route path="/soar" element={<Navigate to="/cases" replace />} />
         <Route path="/agents" element={<AgentManager />} />
         <Route path="/inventory" element={<AssetInventory />} />
-        <Route path="/vulnerabilities" element={<VulnerabilityScanner />} />
+        <Route path="/vulnerabilities" element={<Navigate to="/cases" replace />} />
         <Route path="/ocsf" element={<OCSFParser />} />
         <Route path="/investigation/:id" element={<ProcessTree />} />
         <Route path="/dashboards" element={<DashboardGallery />} />
