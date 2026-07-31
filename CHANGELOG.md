@@ -7,6 +7,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **New Go service (`go-service/`) for OSINT enrichment, threat-intel feed caching, and
+  offline log analysis** - a standalone module built for concurrent, low-memory-footprint work
+  and for analysis that needs to run with no live backend and no live internet access:
+  - **Disk-backed cache** (single-file [bbolt](https://github.com/etcd-io/bbolt) store) for IOCs
+    and OSINT lookup results, refreshable on demand or automatically every 30 days
+    (`FEED_SYNC_INTERVAL_DAYS`) - unlike the in-memory caches it replaces, this survives a
+    process restart, and the cache file itself can be copied to another machine for fully
+    offline use.
+  - **Offline log analyzer** - streams a log file through a CPU-core-sized worker pool (memory
+    stays flat regardless of file size), parses it with a Go port of the existing 17-vendor-
+    profile OCSF mapper, matches every candidate IP/hash/URL/domain/email against the cached
+    IOC set (including CIDR ranges), enriches hits with cached OSINT data, and produces a JSON
+    and a self-contained HTML report. Reachable from Event Explorer's Import Analysis panel via
+    a new "⬇ Offline Analysis Report" button, or directly via the new
+    `POST /api/analyze/offline` route.
+  - **`analyzer-cli`** - the same engine as a standalone CLI (`sync feeds`, `sync osint`,
+    `analyze --offline`, `cache status`) for air-gapped/compliance use, independent of the web
+    app entirely.
+  - **`cmd/server`** - a long-running HTTP mode (`GO_SERVICE_ADDR`, default `:8090`) that Node
+    now proxies to for OSINT lookups (`backend/src/routes/osint.js` is now a thin proxy, same
+    response shape, zero frontend changes) and the new offline-analysis route. The live
+    ingestion pipeline, real-time correlation, and IOC-match alerting are untouched - this is
+    additive, not a replacement of Node's own threat-intel feed sync.
 - **Automated incident analysis reporting** - a one-click "Generate Report" action on any case
   assembles a narrative summary (entities involved, MITRE tactics observed, threat-intel
   matches), resolves every IOC-matched alert back to its source feed/indicator/confidence via a
@@ -49,6 +72,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   `scripts/switch-to-live-monitoring.ps1` for local live-monitoring restarts.
 
 ### Changed
+- **OSINT lookups (`/api/osint/*`) now proxy to the new Go service** instead of running in
+  Node directly - same request/response shape, but backed by a disk-persisted cache instead of
+  an in-memory 24h `Map`, so results survive a backend restart.
 - **Incident Response renamed to Case Management** (`/incidents` now redirects to `/cases`) and
   the UEBA/SOAR/Vulnerabilities nav entries were removed - they had no working pages behind them.
 - **Threat-intel sync cadence** is now every 5 minutes instead of every 30 minutes, and the feed
@@ -67,6 +93,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   the existing admin and T2 analyst accounts for role-based testing.
 
 ### Dependencies
+- **New Go module** (`go-service/`, Go 1.26): `go.etcd.io/bbolt` (disk cache),
+  `github.com/spf13/cobra` (CLI), `golang.org/x/sync` (bounded concurrent feed/OSINT fetches).
+  Everything else uses the standard library on purpose.
 - **Backend**: Express 5, express-rate-limit 8, helmet 8.3, morgan 1.11, node-cron 4, dotenv 17,
   bcryptjs 3, jest 30. Replaced the `uuid` package with Node's built-in `crypto.randomUUID()` -
   `uuid` v14 dropped CommonJS support entirely, which silently broke under Jest (the live server

@@ -31,6 +31,7 @@
 - [Quick Start](#-quick-start)
 - [Dashboard & Modules](#-dashboard--modules)
 - [Agent System](#-agent-system)
+- [Offline Analyzer (Go Service)](#-offline-analyzer-go-service)
 - [API Reference](#-api-reference)
 - [Configuration](#-configuration)
 - [Login Credentials](#-login-credentials-local-dev--npm-run-seed-only)
@@ -219,6 +220,11 @@ to full compromise, reachable from any incident with a reconstructed attack chai
     erroring out repeatedly after a 429
 - **CIDR-aware IOC matching** so netblock feeds such as Spamhaus DROP can trigger threat-intel alerts
 - **🗺️ Threat Origins** Geographic breakdown: Russia, China, N. Korea, Iran, Anonymous
+- This page's feed sync and IOC store are still Node's own (`backend/src/services/connectors/feedSync.js`,
+  5-minute cadence) so real-time IOC-match alerting on live-ingested events keeps working
+  unchanged. The new Go service (below) maintains an independent copy of the same 13 feeds in
+  its own disk cache, purpose-built for the offline analyzer — the two aren't unified yet; see
+  [Offline Analyzer](#-offline-analyzer-go-service)
 
 ### 🔎 OSINT Enrichment
 - **One-click pivot** from any IP, domain, hash, or email — on an alert, a case report, or an
@@ -227,6 +233,9 @@ to full compromise, reachable from any incident with a reconstructed attack chai
   toggle when the original payload is needed
 - Sources that aren't configured (no API key set) show a clear "Not configured" state rather
   than an error
+- **Now served by the Go OSINT/analyzer service** (see [Offline Analyzer](#-offline-analyzer-go-service))
+  behind a disk-backed cache that survives a backend restart — the lookup panel's API contract
+  is unchanged, `backend/src/routes/osint.js` is now a thin proxy
 
 ### 👤 UEBA (User & Entity Behavior Analytics)
 - **Stats**: High Risk Users, Total Anomalies, Users Monitored
@@ -400,6 +409,21 @@ k3-siem/
 │   ├── requirements.txt                 # 📦 Python dependencies
 │   └── Dockerfile                       # 🐳 Agent container image
 │
+├── 🔬 go-service/                       # Go OSINT/IOC-cache/offline-analyzer service
+│   ├── cmd/
+│   │   ├── server/                      # 🌐 HTTP daemon — Node proxies to this
+│   │   └── analyzer-cli/                # 🕵️ Standalone offline CLI (same core packages)
+│   └── internal/
+│       ├── ioc/                         # Indicator type, normalization, CIDR matching
+│       ├── cache/                       # bbolt-backed disk cache (IOCs, OSINT, feed metadata)
+│       ├── feeds/                       # The 13 threat-intel feed definitions + parsers
+│       ├── osint/                       # VirusTotal/AbuseIPDB/Shodan/RDAP/rDNS/crt.sh/geoip
+│       ├── ocsf/                        # Go port of the 17-vendor-profile log parser
+│       ├── analyzer/                    # Streaming, worker-pooled IOC-matching log analyzer
+│       ├── report/                      # JSON + self-contained HTML report rendering
+│       ├── api/                         # HTTP handlers shared by cmd/server
+│       └── scheduler/                   # 30-day automatic feed-refresh ticker
+│
 ├── 🐳 docker-compose.yml               # PostgreSQL + ClickHouse + App + 3 Agents
 ├── 🐳 Dockerfile                        # Multi-stage Node.js build (non-root, healthcheck)
 ├── 🪟 start.bat                         # Windows dev startup
@@ -512,6 +536,15 @@ chmod +x start.sh && ./start.sh
 ```
 
 Backend starts on `:3001`, frontend on `:3000`.
+
+**Optional — Go OSINT/analyzer service** (powers the OSINT panel + offline analysis report;
+`start.bat`/`start.sh` don't launch it automatically yet):
+```bash
+cd go-service && go run ./cmd/server   # requires Go >= 1.22, listens on :8090
+```
+The OSINT panel and "Offline Analysis Report" button degrade to a clear error (not a crash) if
+this isn't running. See [Offline Analyzer](#-offline-analyzer-go-service) for the standalone
+CLI mode.
 
 ### Option 3: Deploy Real Agents
 
@@ -796,6 +829,63 @@ authentication.
 
 ---
 
+## 🔬 Offline Analyzer (Go Service)
+
+A standalone Go module (`go-service/`) living alongside the Node backend — built for
+high-throughput, low-memory IOC/OSINT work and for analysis that needs to run **with no live
+backend and no live internet access**, once its cache is populated.
+
+### What it does
+- **Threat-intel feed sync** — the same 13 feeds as the Threat Intel page (AbuseIPDB, OTX
+  AlienVault, OpenPhish, PhishTank, Spamhaus DROP v4/v6, Feodo Tracker, SSLBL JA3, URLhaus,
+  ThreatFox, MalwareBazaar, Blocklist.de, CINS Army), fetched concurrently and stored in a
+  single-file, disk-backed cache ([bbolt](https://github.com/etcd-io/bbolt)) that survives
+  restarts — copy the cache file to another machine and it keeps working, no network required.
+- **OSINT enrichment** — VirusTotal, AbuseIPDB, Shodan, RDAP/WHOIS, reverse DNS, crt.sh, and
+  IP geolocation, cached the same way. This is what now powers the OSINT lookup panel
+  (`GET /api/osint/*` proxies to it) — see [OSINT Enrichment](#-osint-enrichment).
+- **Offline log analyzer** — streams a log file line-by-line through a CPU-core-sized worker
+  pool (memory stays flat regardless of file size), parses it with a Go port of the same
+  17-vendor-profile OCSF mapper the live pipeline uses, matches every candidate IP/hash/URL/
+  domain/email against the cached IOC set (including CIDR ranges), enriches any hit with
+  whatever OSINT data is already cached for it, and produces a JSON report plus a
+  self-contained HTML report (inline CSS, no external assets — opens in any browser, even
+  air-gapped). Reachable from the UI via **Event Explorer → Import Analysis →
+  ⬇ Offline Analysis Report**, or directly via `POST /api/analyze/offline`.
+- **Cache refresh — manual or automatic** — trigger a sync on demand
+  (`analyzer-cli sync feeds` or `POST /api/intel/... ` → Go's `/v1/intel/feeds/sync`), or let
+  the long-running server mode refresh it automatically every 30 days
+  (`FEED_SYNC_INTERVAL_DAYS`, configurable).
+
+### Two ways to run it
+```bash
+cd go-service
+
+# Long-running HTTP service (what Node proxies to)
+go run ./cmd/server
+
+# Standalone CLI — works fully offline once the cache is populated
+go run ./cmd/analyzer-cli sync feeds              # populate the IOC cache from live feeds
+go run ./cmd/analyzer-cli sync osint --type ip --target 1.2.3.4   # cache one OSINT lookup
+go run ./cmd/analyzer-cli analyze --input suspicious.log \
+  --out report.json --html report.html --offline  # fully offline analysis + report
+go run ./cmd/analyzer-cli cache status            # inspect what's cached
+```
+
+`--offline` refuses to run unless the cache already has data in it — a deliberate compliance/
+air-gap guard rather than a silent degrade.
+
+### Relationship to the existing Node backend
+This is additive, not a rewrite: the live ingestion pipeline (`/api/events/import`,
+`/api/events/ingest`), real-time correlation, and IOC-match alerting are all still Node/
+SQLite/ClickHouse, unchanged. Only `backend/src/routes/osint.js` was rewired into a thin proxy;
+`backend/src/routes/analyze.js` is a new, additive route. Node's own threat-intel feed cache
+(used for live alerting) and the Go service's cache (used for offline analysis) are
+intentionally independent for now — see the note in
+[Threat Intelligence](#-threat-intelligence).
+
+---
+
 ## 📡 API Reference
 
 ### 🔐 Authentication
@@ -849,6 +939,15 @@ authentication.
 | `GET` | `/api/ocsf/stats` | JWT | Counts by OCSF class/category |
 | `GET` | `/api/ocsf/events` | JWT | Paginated OCSF-normalized events with filters |
 | `GET` | `/api/ocsf/events/:id` | JWT | Single event's raw log + OCSF mapping |
+
+### 🔎 OSINT & 🔬 Offline Analysis
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `GET` | `/api/osint/ip` | JWT | IP enrichment (geo, reverse DNS, RDAP, VirusTotal, AbuseIPDB, Shodan) — proxies to the Go service |
+| `GET` | `/api/osint/domain` | JWT | Domain enrichment (RDAP, crt.sh, VirusTotal) |
+| `GET` | `/api/osint/hash` | JWT | File hash reputation (VirusTotal) |
+| `GET` | `/api/osint/email` | JWT | Domain-level RDAP/MX for the email's domain |
+| `POST` | `/api/analyze/offline` | JWT (t1+) | `{content \| file_path}` → OSINT-enriched IOC analysis report (JSON, or HTML with `?format=html`), via the Go analyzer |
 
 ### 🚨 Alerts
 | Method | Endpoint | Auth | Description |
@@ -962,6 +1061,20 @@ authentication.
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TO` | Email alerts |
 | `ABUSEIPDB_API_KEY`, `OTX_API_KEY`, `PHISHTANK_APP_KEY` | Threat-intel feed sync (every 5 min); open feeds run without keys, API-backed feeds activate when configured |
 | `NVD_API_KEY` | Raises the agent-side CVE scan's NVD rate limit (5 → 50 req/30s) |
+| `GO_SERVICE_URL` | `http://localhost:8090` | Where `osint.js`/`analyze.js` proxy to — set this if the Go service runs on a different host/port |
+
+### Go Service Environment Variables (`go-service/`)
+
+The Go service reads the OSINT/feed API keys above directly (`VIRUSTOTAL_API_KEY`,
+`ABUSEIPDB_API_KEY`, `SHODAN_API_KEY`, `OTX_API_KEY`, `PHISHTANK_APP_KEY`, `GEOIP_DISABLED`) —
+for local dev it auto-loads `go-service/.env` (if present) then falls back to `backend/.env`,
+so you don't need to duplicate secrets. Real environment variables always take priority.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GO_SERVICE_ADDR` | `:8090` | HTTP listen address for `cmd/server` |
+| `GO_SERVICE_CACHE_PATH` | `./data/cache.db` | Path to the bbolt cache file |
+| `FEED_SYNC_INTERVAL_DAYS` | `30` | Automatic feed-refresh cadence (`cmd/server` only — the CLI only syncs when you tell it to) |
 
 ### Database Schema (Key Tables)
 
@@ -1076,6 +1189,7 @@ the SOAR execution result rather than silently pretending to succeed.
 | 🐘 **Database** | PostgreSQL (prod) / SQLite (dev) — relational data | 16 / built-in |
 | 📈 **Log Store** | ClickHouse — events, audit_log, process_nodes | 24 |
 | 🐍 **Agent** | Python + requests + psutil + pyyaml | 3.12 |
+| 🔬 **OSINT/Analyzer Service** | Go + bbolt (disk cache) + Cobra (CLI) | 1.26 |
 | 🐳 **Deployment** | Docker + Docker Compose (multi-stage, non-root, healthcheck) | — |
 | 🔐 **Auth** | JWT + bcryptjs | 12h tokens |
 | 🛡️ **Security Middleware** | helmet, express-rate-limit, cors, express-validator | 8.3 / 8.6 / 2.8 / 7.2 |

@@ -42,6 +42,12 @@ export const eventsApi = {
   kql: (query) => api.post('/events/kql', { query }),
 };
 
+// Offline log analyzer (Go service) — deep OSINT-enriched IOC report over a batch of logs,
+// independent of the live ingestion pipeline eventsApi.import() drives.
+export const analyzeApi = {
+  offlineHtml: (data) => api.post('/analyze/offline', data, { params: { format: 'html' }, responseType: 'text' }),
+};
+
 export const intelApi = {
   iocs: (params) => api.get('/intel/iocs', { params }),
   createIoc: (data) => api.post('/intel/iocs', data),

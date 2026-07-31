@@ -1,0 +1,11 @@
+/data/
+*.db
+# Anchored to go-service/ root — an unanchored "analyzer-cli" would also match the
+# cmd/analyzer-cli/ *source* directory and silently exclude main.go from git.
+/analyzer-cli
+/analyzer-cli.exe
+/server
+/server.exe
+*.exe
+/report.json
+/report.html

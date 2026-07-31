@@ -35,6 +35,29 @@ services:
       retries: 20
     restart: unless-stopped
 
+  go-service:
+    build: ./go-service
+    environment:
+      GO_SERVICE_ADDR: ":8090"
+      GO_SERVICE_CACHE_PATH: "/app/data/cache.db"
+      FEED_SYNC_INTERVAL_DAYS: ${FEED_SYNC_INTERVAL_DAYS:-30}
+      GEOIP_DISABLED: ${GEOIP_DISABLED:-false}
+      VIRUSTOTAL_API_KEY: ${VIRUSTOTAL_API_KEY:-}
+      ABUSEIPDB_API_KEY: ${ABUSEIPDB_API_KEY:-}
+      SHODAN_API_KEY: ${SHODAN_API_KEY:-}
+      OTX_API_KEY: ${OTX_API_KEY:-}
+      PHISHTANK_APP_KEY: ${PHISHTANK_APP_KEY:-}
+    volumes:
+      - go_service_data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8090/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+    # Not published to the host on purpose — only `app` talks to this, over the compose network.
+
   app:
     build: .
     depends_on:
@@ -42,9 +65,12 @@ services:
         condition: service_healthy
       clickhouse:
         condition: service_healthy
+      go-service:
+        condition: service_healthy
     ports:
       - "3001:3001"
     environment:
+      GO_SERVICE_URL: http://go-service:8090
       NODE_ENV: production
       DB_CLIENT: postgres
       DATABASE_URL: postgresql://k3:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/k3_siem
@@ -147,3 +173,4 @@ services:
 volumes:
   postgres_data:
   clickhouse_data:
+  go_service_data:
