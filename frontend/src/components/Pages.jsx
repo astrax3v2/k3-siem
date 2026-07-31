@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { eventsApi, correlationApi, intelApi, uebaApi, soarApi, incidentsApi } from '../services/api';
+import { eventsApi, correlationApi, intelApi, uebaApi, soarApi, incidentsApi, analyzeApi } from '../services/api';
 import { useAuth } from './Layout/Auth';
 import OsintPanel from './OSINT/OsintPanel';
 import IncidentReportPanel from './Incidents/IncidentReportPanel';
@@ -22,6 +22,8 @@ export function EventExplorer({ liveEvents }) {
   const [importResult, setImportResult] = useState(null);
   const [importError, setImportError] = useState('');
   const [osintTarget, setOsintTarget] = useState(null);
+  const [analyzingOffline, setAnalyzingOffline] = useState(false);
+  const [offlineAnalysisError, setOfflineAnalysisError] = useState('');
   const [filters, setFilters] = useState({
     severity: searchParams.get('severity') || '',
     source: searchParams.get('source') || '',
@@ -86,6 +88,31 @@ export function EventExplorer({ liveEvents }) {
   const onImportContent = async () => {
     if (!importContent.trim()) return;
     await importLogs({ content: importContent });
+  };
+
+  // Downloads a self-contained, OSINT-enriched offline analysis report (Go service) for the
+  // same batch just imported — independent of the live ingestion pipeline above, this re-scans
+  // the same raw content purely against the cached IOC/OSINT data.
+  const onDownloadOfflineReport = async () => {
+    if (!importContent.trim()) return;
+    setAnalyzingOffline(true);
+    setOfflineAnalysisError('');
+    try {
+      const res = await analyzeApi.offlineHtml({ content: importContent });
+      const blob = new Blob([res.data], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `k3-offline-analysis-${new Date().toISOString().replace(/[:.]/g, '-')}.html`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setOfflineAnalysisError(e.response?.data?.error || e.message || 'Offline analysis failed');
+    } finally {
+      setAnalyzingOffline(false);
+    }
   };
 
   const onLoadLocalFile = async (event) => {
@@ -155,7 +182,13 @@ export function EventExplorer({ liveEvents }) {
 
       {importResult?.imported > 0 && (
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div className="card-title">Import Analysis</div>
+          <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>Import Analysis</span>
+            <button className="btn btn-secondary btn-sm" disabled={analyzingOffline || !importContent.trim()} onClick={onDownloadOfflineReport}>
+              {analyzingOffline ? 'Analyzing…' : '⬇ Offline Analysis Report'}
+            </button>
+          </div>
+          {offlineAnalysisError && <div style={{ fontSize: 11, color: '#fc8181' }}>{offlineAnalysisError}</div>}
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <span className="badge badge-gray">{importResult.imported} logs imported</span>
             {(importResult.alerts_by_severity || []).map(s => (

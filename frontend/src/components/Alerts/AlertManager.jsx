@@ -24,6 +24,7 @@ export default function AlertManager({ liveAlerts }) {
   const [updating, setUpdating] = useState(false);
   const [creatingIncident, setCreatingIncident] = useState(false);
   const [osintTarget, setOsintTarget] = useState(null);
+  const [actionError, setActionError] = useState(null);
 
   // Keep the URL in sync so filtered/selected views from dashboards are shareable and bookmarkable.
   useEffect(() => {
@@ -80,14 +81,19 @@ export default function AlertManager({ liveAlerts }) {
 
   const updateAlert = async (id, data) => {
     setUpdating(true);
+    setActionError(null);
     try {
       const res = await alertsApi.update(id, data);
       setAlerts(prev => prev.map(a => a.id === id ? res.data : a));
       if (selected === id) setSelected(id);
+    } catch (err) {
+      setActionError(err.response?.data?.error || 'Failed to update alert');
     } finally { setUpdating(false); }
   };
 
   const detail = selected ? alerts.find(a => a.id === selected) : null;
+
+  useEffect(() => { setActionError(null); }, [selected]);
 
   // Deep links from dashboards/widgets pass ?id=<alert> — fetch it directly if it isn't on the current filtered page.
   useEffect(() => {
@@ -107,9 +113,12 @@ export default function AlertManager({ liveAlerts }) {
   const createIncidentFromAlert = async (alertId) => {
     if (!alertId) return;
     setCreatingIncident(true);
+    setActionError(null);
     try {
       const res = await incidentsApi.createFromAlert(alertId);
       navigate('/incidents', { state: { incidentId: res.data.id } });
+    } catch (err) {
+      setActionError(err.response?.data?.error || 'Failed to create incident');
     } finally { setCreatingIncident(false); }
   };
 
@@ -190,6 +199,7 @@ export default function AlertManager({ liveAlerts }) {
             <div className="card-title">Alert Detail</div>
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>{detail.title}</div>
             {detail.description && <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 12, lineHeight: 1.5 }}>{detail.description}</div>}
+            {actionError && <div style={{ fontSize: 12, color: '#fc8181', marginBottom: 12 }}>{actionError}</div>}
             {[['ID', detail.id?.slice(0, 8)], ['Severity', detail.severity], ['Asset', detail.asset], ['Source', detail.source], ['MITRE Tactic', detail.mitre_tactic], ['Technique', detail.mitre_technique], ['Risk Score', `${detail.risk_score}/100`], ['Created', detail.created_at ? new Date(detail.created_at).toLocaleString() : '—']].map(([k, v]) => (
               <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid rgba(30,58,110,.3)', fontSize: 12 }}>
                 <span style={{ color: 'var(--text3)' }}>{k}</span>

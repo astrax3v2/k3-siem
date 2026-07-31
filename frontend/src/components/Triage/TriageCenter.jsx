@@ -80,6 +80,7 @@ export default function TriageCenter({ liveAlerts }) {
   const [busy, setBusy] = useState(false);
   const [playbooks, setPlaybooks] = useState([]);
   const [triggered, setTriggered] = useState({});
+  const [actionError, setActionError] = useState(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -125,6 +126,7 @@ export default function TriageCenter({ liveAlerts }) {
   const selectedAlert = selected?.kind === 'alert' ? alerts.find(a => a.id === selected.id) || queue.find(it => it.kind === 'alert' && it.id === selected.id)?.raw : null;
 
   useEffect(() => {
+    setActionError(null);
     if (!selected) { setIncidentDetail(null); setRelatedEvents([]); return; }
     if (selected.kind === 'incident') {
       incidentsApi.get(selected.id).then(res => {
@@ -157,38 +159,50 @@ export default function TriageCenter({ liveAlerts }) {
 
   async function updateAlertStatus(id, status) {
     setBusy(true);
+    setActionError(null);
     try {
       await alertsApi.update(id, { status });
       await load();
+    } catch (err) {
+      setActionError(err.response?.data?.error || 'Failed to update alert status');
     } finally { setBusy(false); }
   }
 
   async function updateIncidentStatus(id, status) {
     setBusy(true);
+    setActionError(null);
     try {
       await incidentsApi.update(id, { status });
       const res = await incidentsApi.get(id);
       setIncidentDetail(res.data);
       await load();
+    } catch (err) {
+      setActionError(err.response?.data?.error || 'Failed to update incident status');
     } finally { setBusy(false); }
   }
 
   async function updateIncidentTeam(id, teamId) {
     setBusy(true);
+    setActionError(null);
     try {
       await incidentsApi.update(id, { team_id: teamId || null });
       const res = await incidentsApi.get(id);
       setIncidentDetail(res.data);
       await load();
+    } catch (err) {
+      setActionError(err.response?.data?.error || 'Failed to reassign team');
     } finally { setBusy(false); }
   }
 
   async function createIncidentFromAlert(alertId) {
     setBusy(true);
+    setActionError(null);
     try {
       const res = await incidentsApi.createFromAlert(alertId);
       await load();
       setSelected({ kind: 'incident', id: res.data.id });
+    } catch (err) {
+      setActionError(err.response?.data?.error || 'Failed to create incident');
     } finally { setBusy(false); }
   }
 
@@ -303,6 +317,7 @@ export default function TriageCenter({ liveAlerts }) {
               <div className="card-title">{detailKind === 'alert' ? '🚨 Alert Detail' : '🧯 Incident Detail'}</div>
               <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>{detailRaw.title}</div>
               {detailRaw.description && <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 10, lineHeight: 1.5 }}>{detailRaw.description}</div>}
+              {actionError && <div style={{ fontSize: 12, color: '#fc8181', marginBottom: 10 }}>{actionError}</div>}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12 }}>
                 <div><span style={{ color: 'var(--text3)' }}>Severity</span><div><span className={`badge ${SEV_BADGE[detailRaw.severity] || 'badge-gray'}`}>{detailRaw.severity}</span></div></div>
                 <div><span style={{ color: 'var(--text3)' }}>Status</span><div style={{ fontWeight: 600 }}>{detailRaw.status}</div></div>
