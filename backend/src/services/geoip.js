@@ -16,11 +16,13 @@ async function lookupGeo(ip) {
   if (cached && Date.now() - cached.ts < TTL_MS) return cached.geo;
 
   try {
-    const res = await fetch(`http://ip-api.com/json/${encodeURIComponent(ip)}?fields=status,lat,lon,country`, {
+    const res = await fetch(`http://ip-api.com/json/${encodeURIComponent(ip)}?fields=status,lat,lon,country,countryCode`, {
       signal: AbortSignal.timeout(3000),
     });
     const data = await res.json();
-    const geo = data.status === 'success' ? { lat: data.lat, lon: data.lon, country: data.country } : null;
+    const geo = data.status === 'success'
+      ? { lat: data.lat, lon: data.lon, country: data.country, countryCode: data.countryCode }
+      : null;
     cache.set(ip, { geo, ts: Date.now() });
     return geo;
   } catch {
