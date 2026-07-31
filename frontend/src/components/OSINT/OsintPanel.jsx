@@ -35,12 +35,17 @@ function fmtDate(iso) {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
 }
 
+function flagEmoji(countryCode) {
+  if (!countryCode || countryCode.length !== 2) return '';
+  return String.fromCodePoint(...[...countryCode.toUpperCase()].map(c => c.codePointAt(0) + 127397));
+}
+
 // Each parser turns a source's raw payload into an ordered list of {label, value, badge?} rows —
 // the analyst-facing "clean feed". Sources with no parser fall back to raw JSON.
 const PARSERS = {
   geo(data) {
     return [
-      { label: 'Country', value: data.country || '—' },
+      { label: 'Country', value: data.country ? `${flagEmoji(data.countryCode)} ${data.country}`.trim() : '—' },
       data.lat != null && data.lon != null && {
         label: 'Coordinates',
         value: `${data.lat}, ${data.lon}`,
@@ -163,9 +168,9 @@ function FieldRow({ label, value, href, badge }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '4px 0', fontSize: 12, borderBottom: '1px solid var(--border)' }}>
       <span style={{ color: 'var(--text3)', flexShrink: 0 }}>{label}</span>
-      <span style={{ color: 'var(--text1)', textAlign: 'right', wordBreak: 'break-word' }}>
+      <span style={{ color: 'var(--text)', textAlign: 'right', wordBreak: 'break-word' }}>
         {badge ? <span className={`badge ${BADGE_CLASS[badge] || 'badge-gray'}`}>{value}</span> : null}
-        {!badge && href ? <a href={href} target="_blank" rel="noreferrer">{value}</a> : null}
+        {!badge && href ? <a href={href} target="_blank" rel="noreferrer" style={{ color: 'var(--text)' }}>{value}</a> : null}
         {!badge && !href ? value : null}
       </span>
     </div>
