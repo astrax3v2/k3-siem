@@ -46,6 +46,87 @@ func lookupGeo(ctx context.Context, client *httpx.Client, ip string) any {
 	return map[string]any{"lat": data.Lat, "lon": data.Lon, "country": data.Country, "countryCode": data.CountryCode}
 }
 
+// lookupGeoFreeIPAPI is a second, independent geolocation source (freeipapi.com — keyless,
+// 60 req/min, explicit "commercial use allowed" ToS) for forensic cross-corroboration: two
+// independent sources agreeing on a location is stronger evidence than one alone.
+func lookupGeoFreeIPAPI(ctx context.Context, client *httpx.Client, ip string) any {
+	if isPrivateIP(ip) || os.Getenv("GEOIP_DISABLED") == "true" {
+		return nil
+	}
+	var data struct {
+		Latitude    float64 `json:"latitude"`
+		Longitude   float64 `json:"longitude"`
+		CountryName string  `json:"countryName"`
+		CountryCode string  `json:"countryCode"`
+		CityName    string  `json:"cityName"`
+		RegionName  string  `json:"regionName"`
+	}
+	u := fmt.Sprintf("https://free.freeipapi.com/api/json/%s", url.QueryEscape(ip))
+	if err := client.FetchJSON(ctx, u, httpx.FetchOptions{TimeoutMs: 5000}, &data); err != nil {
+		return nil
+	}
+	if data.CountryCode == "" {
+		return nil
+	}
+	return map[string]any{
+		"lat": data.Latitude, "lon": data.Longitude, "country": data.CountryName,
+		"countryCode": data.CountryCode, "city": data.CityName, "region": data.RegionName,
+	}
+}
+
+// lookupGeoIPWhoIs is a third, independent geolocation source (ipwho.is — keyless, 1000
+// req/day, explicit "commercial use allowed" ToS, richest field set of the free options
+// including ISP/ASN) for the same cross-corroboration purpose.
+func lookupGeoIPWhoIs(ctx context.Context, client *httpx.Client, ip string) any {
+	if isPrivateIP(ip) || os.Getenv("GEOIP_DISABLED") == "true" {
+		return nil
+	}
+	var data struct {
+		Success    bool    `json:"success"`
+		Country    string  `json:"country"`
+		CountryCd  string  `json:"country_code"`
+		City       string  `json:"city"`
+		Region     string  `json:"region"`
+		Latitude   float64 `json:"latitude"`
+		Longitude  float64 `json:"longitude"`
+		Connection struct {
+			ISP string `json:"isp"`
+			Org string `json:"org"`
+			ASN int    `json:"asn"`
+		} `json:"connection"`
+	}
+	u := fmt.Sprintf("https://ipwho.is/%s", url.QueryEscape(ip))
+	if err := client.FetchJSON(ctx, u, httpx.FetchOptions{TimeoutMs: 5000}, &data); err != nil {
+		return nil
+	}
+	if !data.Success {
+		return nil
+	}
+	return map[string]any{
+		"lat": data.Latitude, "lon": data.Longitude, "country": data.Country,
+		"countryCode": data.CountryCd, "city": data.City, "region": data.Region,
+		"isp": data.Connection.ISP, "org": data.Connection.Org, "asn": data.Connection.ASN,
+	}
+}
+
+// lookupGreyNoise queries GreyNoise's Community API (keyless, anonymous — quota is tight,
+// roughly 50 lookups/week combined across API+web, so this is meant for looking up specific
+// IPs of interest during an investigation, not bulk scanning). It classifies an IP as
+// internet-background "noise" (mass scanners/crawlers) vs. RIOT (known benign business
+// service) vs. neither — useful for distinguishing opportunistic scan traffic from a
+// targeted attack in a forensic report.
+func lookupGreyNoise(ctx context.Context, client *httpx.Client, ip string) any {
+	if isPrivateIP(ip) {
+		return nil
+	}
+	var data any
+	u := fmt.Sprintf("https://api.greynoise.io/v3/community/%s", url.QueryEscape(ip))
+	if err := client.FetchJSON(ctx, u, httpx.FetchOptions{TimeoutMs: 5000}, &data); err != nil {
+		return nil
+	}
+	return data
+}
+
 // reverseDNS ports the Node `dns.promises.reverse(ip)` helper.
 func reverseDNS(ctx context.Context, ip string) any {
 	names, err := net.DefaultResolver.LookupAddr(ctx, ip)

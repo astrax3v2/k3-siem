@@ -105,17 +105,22 @@ func runSources(ctx context.Context, target, kind string, sources map[string]sou
 	return result
 }
 
-// LookupIP fans out to geo/reverse_dns/rdap/virustotal/abuseipdb/shodan, matching the Node
-// GET /api/osint/ip route's source set exactly.
+// LookupIP fans out to geo (3 independent sources, for forensic cross-corroboration) plus
+// reverse_dns/rdap/virustotal/abuseipdb/shodan/greynoise, matching (and extending) the Node
+// GET /api/osint/ip route's source set — the original "geo"/"reverse_dns"/"rdap" keys and
+// their shapes are unchanged, so this stays backward compatible.
 func LookupIP(ctx context.Context, client *httpx.Client, store *cache.Store, ip string, ttl time.Duration) Result {
 	key := cacheKey("ip", ip)
 	if cached, ok := getCached(store, key, ttl); ok {
 		return cached
 	}
 	result := runSources(ctx, ip, "ip", map[string]sourceFunc{
-		"geo":         func(ctx context.Context) (any, bool) { return lookupGeo(ctx, client, ip), true },
-		"reverse_dns": func(ctx context.Context) (any, bool) { return reverseDNS(ctx, ip), true },
-		"rdap":        func(ctx context.Context) (any, bool) { return rdapLookup(ctx, client, "ip", ip), true },
+		"geo":           func(ctx context.Context) (any, bool) { return lookupGeo(ctx, client, ip), true },
+		"geo_freeipapi": func(ctx context.Context) (any, bool) { return lookupGeoFreeIPAPI(ctx, client, ip), true },
+		"geo_ipwhois":   func(ctx context.Context) (any, bool) { return lookupGeoIPWhoIs(ctx, client, ip), true },
+		"reverse_dns":   func(ctx context.Context) (any, bool) { return reverseDNS(ctx, ip), true },
+		"rdap":          func(ctx context.Context) (any, bool) { return rdapLookup(ctx, client, "ip", ip), true },
+		"greynoise":     func(ctx context.Context) (any, bool) { return lookupGreyNoise(ctx, client, ip), true },
 		"virustotal": func(ctx context.Context) (any, bool) {
 			return vtLookup(ctx, client, "ip_addresses", ip), vtConfigured()
 		},
@@ -124,6 +129,51 @@ func LookupIP(ctx context.Context, client *httpx.Client, store *cache.Store, ip 
 	})
 	setCached(store, key, result)
 	return result
+}
+
+// GeoConsensus summarizes agreement across the independent geolocation sources in an IP
+// lookup Result — useful in a forensic report to state "N of M independent sources agree
+// this IP is located in <country>" rather than trusting a single provider's answer.
+type GeoConsensus struct {
+	Country    string   `json:"country"`
+	Agree      int      `json:"agree"`
+	Total      int      `json:"total"`
+	SourceList []string `json:"sources"`
+}
+
+// Consensus tallies the country returned by each geo_* source (plus the original "geo") and
+// reports whichever country the most sources agree on. Returns ok=false if no geo source
+// returned usable data (e.g. a private IP, or GEOIP_DISABLED).
+func (r Result) GeoConsensusResult() (GeoConsensus, bool) {
+	counts := map[string][]string{}
+	for _, name := range []string{"geo", "geo_freeipapi", "geo_ipwhois"} {
+		src, ok := r.Sources[name]
+		if !ok || src.Data == nil {
+			continue
+		}
+		m, ok := src.Data.(map[string]any)
+		if !ok {
+			continue
+		}
+		country, _ := m["country"].(string)
+		if country == "" {
+			continue
+		}
+		counts[country] = append(counts[country], name)
+	}
+	if len(counts) == 0 {
+		return GeoConsensus{}, false
+	}
+	var best string
+	var bestSources []string
+	total := 0
+	for country, sources := range counts {
+		total += len(sources)
+		if len(sources) > len(bestSources) {
+			best, bestSources = country, sources
+		}
+	}
+	return GeoConsensus{Country: best, Agree: len(bestSources), Total: total, SourceList: bestSources}, true
 }
 
 // LookupDomain fans out to rdap/crtsh/virustotal, matching GET /api/osint/domain.

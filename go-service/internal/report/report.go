@@ -5,6 +5,7 @@ package report
 
 import (
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"io"
 	"os"
@@ -88,16 +89,27 @@ const htmlTemplateSource = `<!doctype html>
 
 // osintSummary condenses a hit's cached OSINT sources into one short line for the report
 // table — a full per-source breakdown is still available in the JSON report for anything that
-// needs it programmatically.
+// needs it programmatically. Geolocation is shown as a cross-source consensus ("N/M sources
+// agree") rather than a single provider's answer, since that's meaningfully stronger evidence
+// for a forensic finding.
 func osintSummary(hit analyzer.Hit) string {
 	if hit.OSINT == nil {
 		return ""
 	}
 	var parts []string
-	if geo, ok := hit.OSINT.Sources["geo"]; ok && geo.Data != nil {
-		if m, ok := geo.Data.(map[string]any); ok {
-			if country, _ := m["country"].(string); country != "" {
-				parts = append(parts, "Geo: "+country)
+	if consensus, ok := hit.OSINT.GeoConsensusResult(); ok {
+		if consensus.Total > 1 {
+			parts = append(parts, fmt.Sprintf("Geo: %s (%d/%d sources agree)", consensus.Country, consensus.Agree, consensus.Total))
+		} else {
+			parts = append(parts, "Geo: "+consensus.Country)
+		}
+	}
+	if src, ok := hit.OSINT.Sources["greynoise"]; ok && src.Data != nil {
+		if m, ok := src.Data.(map[string]any); ok {
+			if noise, _ := m["noise"].(bool); noise {
+				parts = append(parts, "GreyNoise: internet background scanner")
+			} else if riot, _ := m["riot"].(bool); riot {
+				parts = append(parts, "GreyNoise: known benign service")
 			}
 		}
 	}

@@ -1,7 +1,8 @@
 // Package feeds ports the 13 threat-intel feed definitions and parsers from
 // backend/src/services/connectors/feedSync.js so the Go cache stays directly comparable to
 // what the Node backend produces: same feed names/sources/URLs, same confidence/severity
-// rules per feed.
+// rules per feed, plus 10 additional keyless feeds (see extra.go) found and live-verified
+// specifically for this Go service — Node's own feedSync.js does not have these.
 package feeds
 
 import (
@@ -33,9 +34,10 @@ func alwaysConfigured() bool    { return true }
 func abuseIPDBConfigured() bool { return os.Getenv("ABUSEIPDB_API_KEY") != "" }
 func otxConfigured() bool       { return os.Getenv("OTX_API_KEY") != "" }
 
-// Registry returns the 13 feed definitions in the same order/shape as the Node FEEDS array.
+// Registry returns the original 13 feed definitions (same order/shape as the Node FEEDS
+// array) plus the additional feeds found for this Go service (see ExtraRegistry in extra.go).
 func Registry() []*Feed {
-	return []*Feed{
+	base := []*Feed{
 		{
 			Name: "AbuseIPDB", Source: "AbuseIPDB",
 			URL:            "https://api.abuseipdb.com/api/v2/blacklist?limit=100&confidenceMinimum=75",
@@ -132,4 +134,5 @@ func Registry() []*Feed {
 			Sync:         syncCinsArmy,
 		},
 	}
+	return append(base, ExtraRegistry()...)
 }
