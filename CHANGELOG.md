@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- **🕸️ Link Analysis** — a Maltego-style entity-relationship graph for case investigation,
+  built purely from data the incident report endpoint already assembles (no new backend route):
+  the incident at the center, its linked alerts, and every asset/user/IP/IOC that shows up
+  across them, laid out with a self-contained force-directed simulation (no new dependency).
+  Pan/zoom, hover to highlight a node's connections, and click any IP/domain/hash/email/URL
+  node to open the same OSINT lookup panel used everywhere else. Reachable from Case
+  Management's case detail panel and from inside the "Generate Report" slide-over.
+- **Inline offline analysis report** — "🔬 Offline Analysis Report" in Event Explorer's Import
+  Analysis panel now renders the hits/image-evidence table directly in the app (a new
+  `OfflineAnalysisPanel`, fetching the existing JSON endpoint) instead of only offering a
+  silent file download; the HTML download is still one click away inside the panel.
+- **5 more parsed OSINT sources in the lookup panel**: the freeipapi.com/ipwho.is geolocation
+  sources, GreyNoise, urlscan.io, and Google Safe Browsing were already returned by the API
+  (added last release) but had no frontend parser, so they fell back to a raw JSON dump — they
+  now render as clean labeled fields like every other source. Also wired `url` as a lookup type
+  end-to-end (API client, IOC-click handlers, OSINT panel), which was previously unreachable
+  from the UI even though the backend route existed.
+
+### Fixed
+- **The Go service's threat-intel cache never populated itself on a fresh deployment** — the
+  30-day auto-refresh ticker only runs on its own schedule, so a brand-new `cache.db` (first
+  run, a fresh container/volume, or after a data reset) silently had zero IOCs until someone
+  manually ran a sync, making the offline analyzer and OSINT enrichment produce empty results
+  with no obvious cause. `cmd/server` now detects an empty cache at startup and runs the first
+  sync immediately instead of waiting a month.
+
 ## [3.0.0] - 2026-08-01
 
 A major version bump: this release adds an entire new Go service alongside the existing
