@@ -227,6 +227,13 @@ func (s *Server) handleAnalyze(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The Go service always has network access (unlike the offline CLI), so live-enrich
+	// hits by default; ?offline=true opts out for a caller that specifically wants a
+	// cache-only, no-outbound-request analysis pass.
+	if r.URL.Query().Get("offline") != "true" {
+		analyzer.EnrichLive(ctx, s.client, s.store, &result)
+	}
+
 	if r.URL.Query().Get("format") == "html" {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_ = report.RenderHTML(w, result)

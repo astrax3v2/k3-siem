@@ -194,6 +194,13 @@ func newAnalyzeCmd() *cobra.Command {
 				return err
 			}
 
+			if !offline {
+				// Live-enrich (geolocate, reputation-check) only the specific IPs/domains
+				// that showed up as hits in this evidence — not the whole IOC cache — then
+				// persist that enrichment to the cache for next time.
+				analyzer.EnrichLive(ctx, httpx.New(), store, &result)
+			}
+
 			fmt.Printf("Scanned %d lines in %s, found %d indicator hits (%s)\n",
 				result.LinesScanned, result.Input, len(result.Hits), result.FinishedAt.Sub(result.StartedAt).Round(time.Millisecond))
 			for sev, count := range result.HitsBySeverity {
