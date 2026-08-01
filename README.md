@@ -59,8 +59,7 @@ air-gapped once its cache is populated. See [Offline Analyzer](#-offline-analyze
 | 🕵️ **Agent-Based Collection** | Deploy Python agents on real endpoints (Windows/Linux/Network) to collect and forward logs |
 | ⚡ **Real-Time Streaming** | WebSocket-powered live event and alert feeds — zero polling |
 | 🔍 **KQL Query Engine** | Kusto Query Language transpiled to SQL for threat hunting |
-| 🤖 **SOAR Automation** | Execute playbooks with step-by-step progress tracking |
-| 🧠 **UEBA Analytics** | ML-inspired user behavior analytics with anomaly scoring |
+| 🤖 **SOAR Automation** | One-click playbook execution against a selected alert from the Triage queue, with step-by-step progress tracking |
 | 🎯 **MITRE ATT&CK Mapping** | Every alert mapped to MITRE tactics and techniques |
 | 🛡️ **CVE Vulnerability Scanning** | Agents query the real NVD CVE API to surface exploitable software/OS versions per asset |
 | 🧬 **OCSF Auto-Normalization** | Every ingested event is auto-classified and mapped onto the Open Cybersecurity Schema Framework |
@@ -69,6 +68,7 @@ air-gapped once its cache is populated. See [Offline Analyzer](#-offline-analyze
 | 🖱️ **Clickable Dashboards** | Every chart, tile, and feed row drills straight into a pre-filtered Alerts/Incidents view |
 | 🔬 **Offline Digital-Forensics Analyzer** *(v3.0)* | Go service analyzes logs and image evidence (EXIF/GPS) against a 23-feed IOC cache with zero live network access required |
 | 🗺️ **Multi-Source Geo Corroboration** *(v3.0)* | Three independent IP geolocation providers cross-checked into an "N/M sources agree" consensus instead of trusting one |
+| 🕸️ **Link Analysis** *(v3.0)* | Maltego-style entity-relationship graph for a case — pan/zoom, click any IP/domain/hash/email/URL node to pivot straight into OSINT |
 
 ---
 
@@ -89,10 +89,9 @@ air-gapped once its cache is populated. See [Offline Analyzer](#-offline-analyze
   </tr>
   <tr>
     <td width="50%"><strong>Correlation Engine</strong><br/><img src="docs/screenshots/correlation.png" alt="Correlation Engine" /></td>
-    <td width="50%"><strong>SOAR Playbooks</strong><br/><img src="docs/screenshots/soar.png" alt="SOAR" /></td>
+    <td width="50%"><strong>Agent Management</strong><br/><img src="docs/screenshots/agents.png" alt="Agent Management" /></td>
   </tr>
   <tr>
-    <td width="50%"><strong>Agent Management</strong><br/><img src="docs/screenshots/agents.png" alt="Agent Management" /></td>
     <td width="50%"><strong>KQL Query Engine</strong><br/><img src="docs/screenshots/kql-engine.png" alt="KQL Engine" /></td>
   </tr>
 </table>
@@ -110,14 +109,14 @@ air-gapped once its cache is populated. See [Offline Analyzer](#-offline-analyze
 - **📡 Related Raw Events** panel showing events tied to the selected item's asset/user/IP
 
 ### 📊 Security Operations Dashboard (`/overview`)
-- **4 KPI Tiles**  Alerts (24h) with critical count, Open Incidents, Events Indexed (24h), SOAR Executions — each tile is clickable through to the matching filtered view
+- **4 KPI Tiles**  Alerts (24h) with critical count, Open Incidents, Events Indexed (24h), SOAR Executions — the first three link through to Alert Manager/Case Management/Event Explorer; SOAR Executions is a count only (playbook execution itself happens inline from Triage, not a dedicated page)
 - **14-Day Alert Trend** Area chart showing alert volume over time — click through to Alert Manager
 - **Severity Distribution** Bar chart breakdown (Critical / High / Medium / Low / Info) — click a bar to open Alert Manager pre-filtered to that severity
 - **⚡ Live Alert Feed** Real-time WebSocket stream of the latest 5 security alerts with MITRE technique tags — click a row to jump straight to that alert's detail panel
 - **📡 Live Event Stream** Top 10 raw events streaming live with green pulse indicator — click a row to open Event Explorer filtered to that host/user/IP
 - **🎯 Top MITRE Tactics** Ranked breakdown of MITRE ATT&CK tactics across all alerts — click a tactic to filter Alert Manager to it
 - **📊 Alert Status Summary** New / Assigned / In Progress / Closed counts — click a status to filter Alert Manager
-- **🔢 Platform Stats** IOC Hits, High-Risk Users, SOAR Runs, Events (24h) — each links to its module
+- **🔢 Platform Stats** IOC Hits, High-Risk Users, SOAR Runs, Events (24h) — IOC Hits and Events (24h) link to Threat Intel/Event Explorer; High-Risk Users and SOAR Runs are counts only (the UEBA risk-scoring engine and SOAR playbook runner are both real and still running server-side, just without a dedicated browsing page today)
 - **🖥️ Agent Status** and **📦 Asset Overview** tiles link to Agent Manager and Asset Inventory
 
 ### 🚨 Alert Manager
@@ -148,6 +147,11 @@ air-gapped once its cache is populated. See [Offline Analyzer](#-offline-analyze
 - **📋 Generate Report** one-click automated analysis report: a narrative summary, entities
   involved, MITRE tactics observed, and every threat-intel-matched alert resolved back to its
   source feed/indicator/confidence score, with a PDF export
+- **🕸️ Link Analysis** *(v3.0)* a Maltego-style entity-relationship graph built from the same
+  report data — the case at the center, its alerts, and every asset/user/IP/IOC that shows up
+  across them; pan/zoom, hover a node to highlight its connections, click any IP/domain/hash/
+  email/URL to pivot into the OSINT panel. Reachable from the case detail panel or from inside
+  a generated report
 - **🌳 Process Tree Link** Cases with a reconstructed attack chain show a "View Process
   Tree" button opening the full investigation view (see below)
 
@@ -249,35 +253,24 @@ to full compromise, reachable from any incident with a reconstructed attack chai
   behind a disk-backed cache that survives a backend restart — the lookup panel's API contract
   is unchanged, `backend/src/routes/osint.js` is now a thin proxy
 
-### 👤 UEBA (User & Entity Behavior Analytics)
-- **Stats**: High Risk Users, Total Anomalies, Users Monitored
-- **Sort Options**: Risk Score, Anomalies, Name
-- **User Risk Table**: Username, Department, Risk Score (color-coded bar), Anomaly count badge, Behavior flags, Location, Last Active
-- **🧠 ML Baseline Deviations**:
-  - Login Time Anomaly Off-hours access detection
-  - Geo-Velocity Impossible travel detection
-  - Peer Group Deviation File access pattern outliers
-  - Data Volume Spike Download volume exceeding 30-day baseline
+### 👤 UEBA (User & Entity Behavior Analytics) — engine only, no dedicated page
+`userRiskEngine.js` still runs continuously in the backend, computing statistical anomaly
+scores per user (login-time histograms, geo-velocity, peer-group/data-volume z-scores) and
+exposing them via `GET /api/ueba/scores`. **The dedicated UEBA browsing page was retired** —
+its route now redirects into Case Management, and only a "High-Risk Users" count survives as
+an Overview dashboard KPI tile. Call the API directly if you need the underlying scores today.
 
-### ⚙️ SOAR (Security Orchestration, Automation & Response)
-- **Stats**: Active Playbooks, Total Executions, Avg Response Time, Recent Executions
-- **Playbook Grid** (2 columns):
-  - Name + status badge (Active/Paused) + execution count
-  - Trigger condition display
-  - **Live Execution Progress** Step-by-step progress bar with completion percentage
-  - Numbered step circles (completed = green checkmark ✓)
-  - Execute / Edit buttons (role-gated)
-  - **Inline Playbook Editing** update playbook name, trigger, status, and steps directly in the UI
-- **Built-in Playbooks**:
-  - 🔐 Brute Force Response Block IP, reset password, create ticket, notify SOC
-  - 🦠 Malware Containment Isolate endpoint, collect forensics, block hash, alert team
-  - 🎣 Phishing Response Extract IOCs, block sender, scan mailboxes, update filters
-  - 🔑 Privilege Escalation Revoke tokens, audit access, reset credentials, review logs
-- **🔗 Integration Connectors** (8):
-  - Jira (ticket creation), Slack (SOC notifications), CrowdStrike (endpoint isolation)
-  - Palo Alto (firewall block), ServiceNow (ITSM), MS Teams (notifications)
-  - MISP (IOC sharing), Email (analyst alerts)
-- **📋 Execution History** Playbook ID, triggered by, status, steps completed, timestamps
+### ⚙️ SOAR — playbook execution, no dedicated console
+Playbook execution is real and wired into the Triage Command Center: selecting an alert
+suggests its matching playbook(s), and running one (`POST /api/soar/playbooks/:id/execute`)
+shows live step-by-step progress inline in the detail panel. **What no longer exists is a
+separate SOAR page** to browse the full playbook catalog, edit playbooks, or page through
+execution history — that route now redirects into Case Management too.
+- **Built-in Playbooks**: 🔐 Brute Force Response, 🦠 Malware Containment, 🎣 Phishing
+  Response, 🔑 Privilege Escalation — each a named sequence of steps (block IP, isolate
+  endpoint, notify SOC, etc.)
+- **🔗 Integration Connectors** (8): Jira, Slack, CrowdStrike, Palo Alto, ServiceNow, MS Teams,
+  MISP, Email — real HTTP calls when configured, an honest "not configured" otherwise
 
 ### 🖥️ Agent Management
 - **Agent Stats**: Total Agents, Online (green), Stale (yellow), Offline (red), Events Collected
@@ -293,14 +286,18 @@ to full compromise, reachable from any incident with a reconstructed attack chai
   - **Install Script** — generates a copy-paste `curl | bash` / PowerShell one-liner per OS for
     environments where inbound SSH from the SIEM isn't allowed
 
-### 🛡️ Vulnerability Scanner & Asset Inventory
+### 🛡️ Vulnerability Scanning & Asset Inventory
 - **Real CVE Matching** agents query the live [NVD CVE API](https://nvd.nist.gov/) for every
   piece of installed software and the host OS, rescanning roughly every 30 minutes; simulated
   agents use a curated, realistic CVE dataset instead so demos work without network egress
 - **`K3_VULN_SCAN`** toggles scanning on/off per agent; **`K3_NVD_API_KEY`** raises the NVD rate
   limit from 5 to 50 requests/30s
-- **Vulnerability Table**: CVE ID, affected software/OS + version, CVSS score, severity
-  (Critical/High/Medium/Low), publish/modified dates, filterable by agent/severity/search
+- **Per-Asset Vulnerabilities**: CVE ID, CVSS score, severity badge, and affected software/
+  version shown directly in each asset's detail panel in Asset Inventory. *(The earlier
+  standalone, fleet-wide filterable "Vulnerability Scanner" page has been retired — its route
+  now redirects into Case Management; the same data is still queryable via
+  `GET /api/agents/assets/vulnerabilities` and surfaces in the "Vulnerability Summary" widget
+  on custom dashboards.)*
 - **Asset Inventory**: hardware (CPU, RAM, disk), OS, installed software, running services, open
   ports, local users, AV/firewall status, domain, and per-asset compliance rollup
 - **Compliance Scoring** an asset counts as compliant when firewall is enabled and antivirus is
@@ -403,15 +400,17 @@ k3-siem/
 │       │   ├── Agents/AgentManager.jsx  # 🖥️ Agent management + remote deploy UI
 │       │   ├── Inventory/
 │       │   │   ├── AssetInventory.jsx   # 📦 Hardware/software/compliance per asset
-│       │   │   └── VulnerabilityScanner.jsx # 🛡️ CVE findings table
+│       │   │   └── VulnerabilityScanner.jsx # 🛡️ CVE findings table (currently unrouted — see note above)
 │       │   ├── OCSF/OCSFParser.jsx      # 🧬 Paste-a-log OCSF normalization view
 │       │   ├── Admin/TeamManagement.jsx # 👥 Team CRUD + user role assignment
 │       │   ├── Investigation/ProcessTree.jsx # 🌳 Attack chain process tree
+│       │   ├── Investigation/LinkAnalysisGraph.jsx # 🕸️ Maltego-style entity graph (v3.0)
+│       │   ├── Analysis/OfflineAnalysisPanel.jsx # 🔬 Inline offline analysis report (v3.0)
 │       │   ├── KQL/KQLEngine.jsx        # 🔍 Query editor + results
 │       │   ├── Layout/Layout.jsx        # 📐 Topbar + sidebar navigation
 │       │   ├── Layout/Auth.jsx          # 🔐 Login + auth context
-│       │   └── Pages.jsx                # 📄 Events, Incidents, Correlation,
-│       │                                #    Threat Intel, UEBA, SOAR
+│       │   └── Pages.jsx                # 📄 Events, Incidents, Correlation, Threat Intel
+│       │                                #    (also exports unrouted UEBA/SOAR views — see note above)
 │       ├── hooks/useWebSocket.js        # 🔌 WebSocket connection hook
 │       └── services/api.js              # 📡 Axios API client
 │
@@ -487,11 +486,11 @@ k3-siem/
                     │  Triage      │
                     │  Dashboards  │
                     │  Alerts      │
-                    │  Incidents   │
+                    │  Cases       │
                     │  Agents      │
                     │  Inventory   │
                     │  KQL Engine  │
-                    │  SOAR        │
+                    │  Threat Intel│
                     └──────────────┘
 ```
 
@@ -602,14 +601,14 @@ hands you a copy-paste install script) straight from the UI. See "Remote Deploym
 ### 📊 Dashboard (`/overview`)
 | Section | Details |
 |---------|---------|
-| **KPI Tiles** | Alerts (24h) · Open Incidents · Events Indexed · SOAR Executions — click through to each module |
+| **KPI Tiles** | Alerts (24h) · Open Incidents · Events Indexed click through to their module; SOAR Executions is a count only |
 | **Alert Trend Chart** | 14-day area chart with gradient fill — click to open Alert Manager |
 | **Severity Chart** | Bar chart: Critical (red), High (orange), Medium (blue), Low (green) — click a bar to filter Alert Manager |
 | **Live Alert Feed** | Real-time WebSocket stream with MITRE technique badges — click a row to open that alert |
 | **Live Event Stream** | Raw events with green pulse animation — click a row to open Event Explorer filtered to it |
 | **MITRE Tactics** | Ranked breakdown with horizontal progress bars — click to filter Alert Manager by tactic |
 | **Alert Status** | New / Assigned / In Progress / Closed counts — click to filter by status |
-| **Platform Stats** | IOC Hits · High-Risk Users · SOAR Runs · Events (24h) — each links to its module |
+| **Platform Stats** | IOC Hits · Events (24h) click through; High-Risk Users · SOAR Runs are counts only (no dedicated page currently) |
 
 ### 🚨 Alert Manager
 | Feature | Details |
@@ -620,13 +619,12 @@ hands you a copy-paste install script) straight from the UI. See "Remote Deploym
 | **Detail Panel** | Full metadata · Status update buttons · Create Incident · Risk visualization |
 | **Live Updates** | New alerts prepended via WebSocket with deduplication, filtered to match the active view |
 
-### 🛡️ Vulnerability Scanner
+### 🛡️ Vulnerability Scanning — per-asset panel, no dedicated page
 | Feature | Details |
 |---------|---------|
 | **CVE Source** | Real NVD CVE API lookups per installed software/OS (simulated agents use a curated dataset) |
-| **Table Columns** | CVE ID · Software/OS + version · CVSS score · Severity · Published/modified · Status |
-| **Filters** | Agent · Severity · Free-text search across CVE ID/software/description |
-| **Stats** | Total, Critical/High/Medium/Low counts, affected asset count |
+| **Access** | Per-asset CVE list (CVE ID · CVSS · severity · software/version) in the Asset Inventory detail panel |
+| **Removed** | The standalone, fleet-wide filterable Vulnerability Scanner page — its route now redirects into Case Management; the data is still reachable via `GET /api/agents/assets/vulnerabilities` and the "Vulnerability Summary" dashboard widget |
 
 ### 📦 Asset Inventory
 | Feature | Details |
@@ -693,13 +691,15 @@ hands you a copy-paste install script) straight from the UI. See "Remote Deploym
 | **Workflow** | Open → In Progress → Contained → Eradicated → Recovered → Closed |
 | **Detail** | Metadata · Linked alerts table · Investigation notes with timestamps |
 | **Analysis Report** | One-click narrative summary · MITRE tactics · resolved threat-intel context · PDF export |
+| **Link Analysis** *(v3.0)* | Maltego-style entity graph (case → alerts → assets/users/IPs/IOCs), pan/zoom, click a node to pivot into OSINT |
 
-### ⚙️ SOAR Playbooks
+### ⚙️ SOAR Playbooks — execution only, no console page
 | Feature | Details |
 |---------|---------|
 | **Playbooks** | Brute Force · Malware · Phishing · Privilege Escalation |
-| **Execution** | Live progress bar · Step checkmarks · Completion message · inline editing for supported roles |
+| **Execution** | Triggered from an alert in Triage — live progress bar, step checkmarks, completion message |
 | **Connectors** | Jira · Slack · CrowdStrike · Palo Alto · ServiceNow · Teams · MISP · Email |
+| **Removed** | The standalone SOAR page (playbook catalog browsing, inline editing, execution history) — its route now redirects into Case Management |
 
 ### 🔴 Threat Intelligence
 | Feature | Details |
@@ -715,12 +715,12 @@ hands you a copy-paste install script) straight from the UI. See "Remote Deploym
 | **Display** | Parsed, labeled fields per source with a raw-JSON toggle |
 | **Entry Points** | Alert detail · Case analysis report · Import analysis results |
 
-### 👤 UEBA
+### 👤 UEBA — backend engine only, no dedicated page
 | Feature | Details |
 |---------|---------|
-| **Risk Scoring** | 0-100 color-coded bars (green → orange → red) |
-| **Anomaly Detection** | Login time · Geo-velocity · Peer group · Data volume |
-| **Flags** | Behavior flags per user with anomaly count badges |
+| **Risk Scoring** | Runs continuously server-side (login time · geo-velocity · peer group · data volume z-scores) |
+| **Access** | `GET /api/ueba/scores` directly, or the "High-Risk Users" count on the Overview dashboard |
+| **Removed** | The standalone UEBA page (per-user risk table, sort options, behavior flags) — its route now redirects into Case Management |
 
 ---
 
@@ -824,7 +824,8 @@ simulate: false
 - **Simulate mode**: returns a curated, realistic CVE dataset per OS profile so demos work with
   zero external network calls
 - Findings are stored per-agent (deduped by `agent_id` + `cve_id` + `software_name`) and surfaced
-  in the Vulnerability Scanner page and Asset Inventory detail panel
+  in each asset's detail panel in Asset Inventory (the earlier standalone Vulnerability Scanner
+  page has been retired — see [Vulnerability Scanning & Asset Inventory](#-vulnerability-scanning--asset-inventory))
 
 ### 🔌 Remote Deployment (SSH)
 

@@ -33,6 +33,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   with no obvious cause. `cmd/server` now detects an empty cache at startup and runs the first
   sync immediately instead of waiting a month.
 
+### Docs
+- **README corrected to match what's actually reachable in the app**, closing a documentation
+  gap left over from the 2.0.x-era removal of the dedicated UEBA and SOAR pages (and, it turns
+  out, the standalone Vulnerability Scanner page too — none of the three are routed in
+  `App.jsx` any more, and `Pages.jsx`'s `UEBA()`/`SOAR()` exports and `VulnerabilityScanner.jsx`
+  are dead code today):
+  - UEBA: the risk-scoring engine (`userRiskEngine.js`) and `GET /api/ueba/scores` are real and
+    still running — there is just no page to browse them anymore, only a "High-Risk Users"
+    count on the Overview dashboard.
+  - SOAR: playbook execution is real and still triggered inline from an alert in the Triage
+    queue — there is no separate console to browse the playbook catalog or execution history.
+  - Vulnerability Scanner: CVE findings are real and still shown per-asset in Asset Inventory's
+    detail panel and the "Vulnerability Summary" dashboard widget — there is no separate
+    fleet-wide filterable table anymore.
+  - Removed a stale screenshot referencing the retired SOAR page; reworded every KPI tile/stat
+    description that implied a working drill-through into one of these three.
+
 ## [3.0.0] - 2026-08-01
 
 A major version bump: this release adds an entire new Go service alongside the existing
