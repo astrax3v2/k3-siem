@@ -43,7 +43,7 @@
 
 ## 🔭 Overview
 
-K3 SIEM is a full-stack **Security Information and Event Management** platform inspired by **Microsoft Sentinel** and **SentinelOne**. It provides real-time security monitoring, threat detection, incident response, and automated playbook execution — all from a unified dark-themed security operations interface. Analysts land on a unified **Triage Command Center**, and every chart, KPI tile, and table row across the dashboards is clickable straight through to the filtered alerts/incidents behind it.
+K3 SIEM is a full-stack **Security Information and Event Management** platform inspired by **Microsoft Sentinel** and **SentinelOne**. It provides real-time security monitoring, threat detection, incident response, and automated playbook execution all from a unified dark-themed security operations interface. Analysts land on a unified **Triage Command Center**, and every chart, KPI tile, and table row across the dashboards is clickable straight through to the filtered alerts/incidents behind it.
 
 **v3.0** adds a standalone Go service for the parts of an investigation that can't wait on live
 monitoring: a 23-feed threat-intel cache, 9-source OSINT enrichment (with three independent
@@ -57,7 +57,7 @@ air-gapped once its cache is populated. See [Offline Analyzer](#-offline-analyze
 |---------|-------------|
 | 🎯 **Unified Triage Queue** | Alerts and incidents merged into one severity/SLA-sorted queue as the default landing page |
 | 🕵️ **Agent-Based Collection** | Deploy Python agents on real endpoints (Windows/Linux/Network) to collect and forward logs |
-| ⚡ **Real-Time Streaming** | WebSocket-powered live event and alert feeds — zero polling |
+| ⚡ **Real-Time Streaming** | WebSocket-powered live event and alert feeds zero polling |
 | 🔍 **KQL Query Engine** | Kusto Query Language transpiled to SQL for threat hunting |
 | 🤖 **SOAR Automation** | One-click playbook execution against a selected alert from the Triage queue, with step-by-step progress tracking |
 | 🎯 **MITRE ATT&CK Mapping** | Every alert mapped to MITRE tactics and techniques |
@@ -101,7 +101,7 @@ air-gapped once its cache is populated. See [Offline Analyzer](#-offline-analyze
 ## ✨ Features
 
 ### 🎯 Triage Command Center (Landing Page)
-- **Default route (`/`)** — alerts and incidents merged into a single severity/SLA-sorted work queue
+- **Default route (`/`)** alerts and incidents merged into a single severity/SLA-sorted work queue
 - **4 Clickable KPI Tiles** Open Alerts, Open Incidents, Critical in Queue, SLA Breaches — click any tile to filter the queue in place; the SLA tile has its own togglable filter button too
 - **Kind / Severity / Search Filters** plus an "⚠ SLA Breaches" toggle
 - **Unified Detail Panel** for whichever row (alert or incident) is selected: metadata, SLA ack/resolve countdown with breach warnings, inline status updates, "Create Incident" from an alert, team reassignment (admin), and one-click SOAR playbook execution
@@ -504,7 +504,7 @@ k3-siem/
 git clone https://github.com/astrax3v2/k3-siem.git
 cd k3-siem
 
-# Required — docker-compose refuses to start without these set.
+# Required docker-compose refuses to start without these set.
 cp .env.example .env
 # Edit .env: set POSTGRES_PASSWORD, CLICKHOUSE_PASSWORD, JWT_SECRET, INGEST_API_KEY, CORS_ORIGIN
 # (or generate them: openssl rand -base64 48 / openssl rand -hex 32 / openssl rand -base64 24)
@@ -594,7 +594,7 @@ hands you a copy-paste install script) straight from the UI. See "Remote Deploym
 ### 🎯 Triage Center (Landing Page)
 | Section | Details |
 |---------|---------|
-| **KPI Tiles** | Open Alerts · Open Incidents · Critical in Queue · SLA Breaches — all clickable, filter the queue in place |
+| **KPI Tiles** | Open Alerts · Open Incidents · Critical in Queue · SLA Breaches all clickable, filter the queue in place |
 | **Unified Queue** | Alerts + incidents, severity/SLA sorted, kind/severity/search/breach filters |
 | **Detail Panel** | Metadata · SLA countdown & breach warning · status updates · team reassignment · playbook execution |
 
@@ -647,7 +647,7 @@ hands you a copy-paste install script) straight from the UI. See "Remote Deploym
 | Feature | Details |
 |---------|---------|
 | **Templates** | SOC Overview (10 widgets) · Threat Hunting (6) · Vulnerability & Compliance (4) · Agent Fleet Health (5) · Identity & UEBA (4) |
-| **Widget Types** | 13 total — KPI tile, alert trend, severity bar, MITRE tactics, alert status, agent status, asset overview, vuln summary, IOC feed, alerts/events tables, live alert/event feeds |
+| **Widget Types** | 13 total  KPI tile, alert trend, severity bar, MITRE tactics, alert status, agent status, asset overview, vuln summary, IOC feed, alerts/events tables, live alert/event feeds |
 | **Grid Layout** | `sm`/`md`/`lg`/`full` widget spans on a 4-column grid |
 | **Sharing** | Save, edit, share/unshare, or delete your own dashboards |
 | **Clickable** | Every widget drills through to its filtered Alerts/Incidents/Events/Agents/Inventory view |
@@ -1051,7 +1051,7 @@ intentionally independent for now — see the note in
 
 ### Backend Environment Variables
 
-**Required** — the app validates these at boot and exits if they're missing or too short (see `backend/src/config.js`):
+**Required** the app validates these at boot and exits if they're missing or too short (see `backend/src/config.js`):
 
 | Variable | Description |
 |----------|-------------|
