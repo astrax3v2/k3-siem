@@ -222,13 +222,16 @@ to full compromise, reachable from any incident with a reconstructed attack chai
 - **🗺️ Threat Origins** Geographic breakdown: Russia, China, N. Korea, Iran, Anonymous
 - This page's feed sync and IOC store are still Node's own (`backend/src/services/connectors/feedSync.js`,
   5-minute cadence) so real-time IOC-match alerting on live-ingested events keeps working
-  unchanged. The new Go service (below) maintains an independent copy of the same 13 feeds in
-  its own disk cache, purpose-built for the offline analyzer — the two aren't unified yet; see
+  unchanged. The Go service (below) maintains its own, larger disk cache — the same 13 feeds
+  plus 10 more curated for digital-forensics use (23 total), purpose-built for the offline
+  analyzer — the two feed sets aren't unified yet; see
   [Offline Analyzer](#-offline-analyzer-go-service)
 
 ### 🔎 OSINT Enrichment
-- **One-click pivot** from any IP, domain, hash, or email — on an alert, a case report, or an
-  import result — to RDAP/WHOIS, geolocation, VirusTotal, AbuseIPDB, and Shodan
+- **One-click pivot** from any IP, domain, URL, hash, or email — on an alert, a case report, or
+  an import result — to RDAP/WHOIS, three cross-corroborating geolocation sources, VirusTotal,
+  AbuseIPDB, Shodan, GreyNoise (scanner vs. targeted-attack classification), urlscan.io
+  (keyless historical-scan lookup), and Google Safe Browsing (opt-in, see the env var table)
 - **Parsed, readable fields** per source instead of a raw JSON dump, with a "View Raw JSON"
   toggle when the original payload is needed
 - Sources that aren't configured (no API key set) show a clear "Not configured" state rather
@@ -416,10 +419,11 @@ k3-siem/
 │   └── internal/
 │       ├── ioc/                         # Indicator type, normalization, CIDR matching
 │       ├── cache/                       # bbolt-backed disk cache (IOCs, OSINT, feed metadata)
-│       ├── feeds/                       # The 13 threat-intel feed definitions + parsers
-│       ├── osint/                       # VirusTotal/AbuseIPDB/Shodan/RDAP/rDNS/crt.sh/geoip
+│       ├── feeds/                       # 23 threat-intel feed definitions + parsers
+│       ├── osint/                       # VT/AbuseIPDB/Shodan/RDAP/rDNS/crt.sh/urlscan/Safe Browsing/GreyNoise/3x geoip
+│       ├── imagemeta/                   # EXIF/IPTC/XMP extraction (GPS, capture time, camera) for image evidence
 │       ├── ocsf/                        # Go port of the 17-vendor-profile log parser
-│       ├── analyzer/                    # Streaming, worker-pooled IOC-matching log analyzer
+│       ├── analyzer/                    # Streaming, worker-pooled log+image evidence analyzer
 │       ├── report/                      # JSON + self-contained HTML report rendering
 │       ├── api/                         # HTTP handlers shared by cmd/server
 │       └── scheduler/                   # 30-day automatic feed-refresh ticker
@@ -698,7 +702,7 @@ hands you a copy-paste install script) straight from the UI. See "Remote Deploym
 ### 🔎 OSINT Enrichment
 | Feature | Details |
 |---------|---------|
-| **Sources** | RDAP/WHOIS · Geolocation · VirusTotal · AbuseIPDB · Shodan |
+| **Sources** | RDAP/WHOIS · 3-source geolocation consensus · VirusTotal · AbuseIPDB · Shodan · GreyNoise · urlscan.io · Google Safe Browsing (opt-in) |
 | **Display** | Parsed, labeled fields per source with a raw-JSON toggle |
 | **Entry Points** | Alert detail · Case analysis report · Import analysis results |
 
@@ -836,22 +840,40 @@ high-throughput, low-memory IOC/OSINT work and for analysis that needs to run **
 backend and no live internet access**, once its cache is populated.
 
 ### What it does
-- **Threat-intel feed sync** — the same 13 feeds as the Threat Intel page (AbuseIPDB, OTX
-  AlienVault, OpenPhish, PhishTank, Spamhaus DROP v4/v6, Feodo Tracker, SSLBL JA3, URLhaus,
-  ThreatFox, MalwareBazaar, Blocklist.de, CINS Army), fetched concurrently and stored in a
-  single-file, disk-backed cache ([bbolt](https://github.com/etcd-io/bbolt)) that survives
-  restarts — copy the cache file to another machine and it keeps working, no network required.
-- **OSINT enrichment** — VirusTotal, AbuseIPDB, Shodan, RDAP/WHOIS, reverse DNS, crt.sh, and
-  IP geolocation, cached the same way. This is what now powers the OSINT lookup panel
-  (`GET /api/osint/*` proxies to it) — see [OSINT Enrichment](#-osint-enrichment).
-- **Offline log analyzer** — streams a log file line-by-line through a CPU-core-sized worker
-  pool (memory stays flat regardless of file size), parses it with a Go port of the same
-  17-vendor-profile OCSF mapper the live pipeline uses, matches every candidate IP/hash/URL/
-  domain/email against the cached IOC set (including CIDR ranges), enriches any hit with
-  whatever OSINT data is already cached for it, and produces a JSON report plus a
-  self-contained HTML report (inline CSS, no external assets — opens in any browser, even
-  air-gapped). Reachable from the UI via **Event Explorer → Import Analysis →
-  ⬇ Offline Analysis Report**, or directly via `POST /api/analyze/offline`.
+- **Threat-intel feed sync — 23 feeds** — the original 13 (AbuseIPDB, OTX AlienVault, OpenPhish,
+  PhishTank, Spamhaus DROP v4/v6, Feodo Tracker, SSLBL JA3, URLhaus, ThreatFox, MalwareBazaar,
+  Blocklist.de, CINS Army) plus 10 more curated for digital-forensics use (Tor Bulk Exit List,
+  SANS ISC DShield Block List, Team Cymru Fullbogons IPv4, GreenSnow Blocklist, Emerging Threats
+  Compromised IPs, DigitalSide OSINT IPs/URLs/Domains, botvrij.eu Domain Blocklist, PhishStats
+  Recent) — all fetched concurrently and stored in a single-file, disk-backed cache
+  ([bbolt](https://github.com/etcd-io/bbolt)) that survives restarts — copy the cache file to
+  another machine and it keeps working, no network required.
+- **OSINT enrichment — 12 sources** — VirusTotal, AbuseIPDB, Shodan, RDAP/WHOIS, reverse DNS,
+  crt.sh, urlscan.io (keyless historical-scan lookup for IPs/domains/URLs — screenshots,
+  contacted infrastructure, TLS/hosting details), Google Safe Browsing (URL reputation; off by
+  default, requires `GOOGLE_SAFE_BROWSING_API_KEY` — see the env var table below for why),
+  GreyNoise Community (classifies an IP as internet-background scan noise vs. a known-benign
+  service vs. neither — separates opportunistic scanning from a targeted attack), and **three
+  independent IP geolocation sources** (ip-api.com, freeipapi.com, ipwho.is) cross-checked into a
+  single "N/M sources agree on country X" consensus rather than trusting one provider — all
+  cached the same way. This is what now powers the OSINT lookup panel (`GET /api/osint/*`
+  proxies to it) — see [OSINT Enrichment](#-osint-enrichment).
+- **Offline log + image analyzer** — point it at a single log file, a single image, or a whole
+  evidence directory mixing both:
+  - **Logs** stream line-by-line through a CPU-core-sized worker pool (memory stays flat
+    regardless of file size), parsed with a Go port of the same 17-vendor-profile OCSF mapper
+    the live pipeline uses, matched against the cached IOC set (IP/hash/URL/domain/email,
+    including CIDR ranges), and enriched with whatever OSINT data is already cached for a hit.
+  - **Images** (JPEG/PNG/TIFF/WebP/HEIC/AVIF/DNG/CR2/NEF/ARW/PEF) get read-only EXIF/IPTC/XMP
+    metadata extraction — GPS coordinates (with a ready-to-click map link), capture timestamp,
+    camera make/model, and software/editing history — the kind of embedded evidence relevant to
+    a digital-forensics investigation. A corrupt or non-image file degrades to a warning instead
+    of failing the run; non-text binary files encountered in a directory (PDFs, archives, the
+    cache file itself) are skipped rather than scanned as garbage log lines.
+  - Both produce one JSON report plus a self-contained HTML report (inline CSS, no external
+    assets — opens in any browser, even air-gapped) with a combined hits table and an image
+    evidence table. Reachable from the UI via **Event Explorer → Import Analysis →
+    ⬇ Offline Analysis Report**, or directly via `POST /api/analyze/offline`.
 - **Cache refresh — manual or automatic** — trigger a sync on demand
   (`analyzer-cli sync feeds` or `POST /api/intel/... ` → Go's `/v1/intel/feeds/sync`), or let
   the long-running server mode refresh it automatically every 30 days
@@ -943,11 +965,12 @@ intentionally independent for now — see the note in
 ### 🔎 OSINT & 🔬 Offline Analysis
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| `GET` | `/api/osint/ip` | JWT | IP enrichment (geo, reverse DNS, RDAP, VirusTotal, AbuseIPDB, Shodan) — proxies to the Go service |
-| `GET` | `/api/osint/domain` | JWT | Domain enrichment (RDAP, crt.sh, VirusTotal) |
+| `GET` | `/api/osint/ip` | JWT | IP enrichment (3-source geo consensus, reverse DNS, RDAP, VirusTotal, AbuseIPDB, Shodan, GreyNoise, urlscan.io) — proxies to the Go service |
+| `GET` | `/api/osint/domain` | JWT | Domain enrichment (RDAP, crt.sh, VirusTotal, urlscan.io) |
 | `GET` | `/api/osint/hash` | JWT | File hash reputation (VirusTotal) |
 | `GET` | `/api/osint/email` | JWT | Domain-level RDAP/MX for the email's domain |
-| `POST` | `/api/analyze/offline` | JWT (t1+) | `{content \| file_path}` → OSINT-enriched IOC analysis report (JSON, or HTML with `?format=html`), via the Go analyzer |
+| `GET` | `/api/osint/url` | JWT | URL reputation (urlscan.io historical scans, Google Safe Browsing if configured) |
+| `POST` | `/api/analyze/offline` | JWT (t1+) | `{content \| file_path}` → OSINT-enriched IOC/image-metadata analysis report (JSON, or HTML with `?format=html`), via the Go analyzer — accepts a log file, an image, or a directory mixing both |
 
 ### 🚨 Alerts
 | Method | Endpoint | Auth | Description |
@@ -1075,6 +1098,7 @@ so you don't need to duplicate secrets. Real environment variables always take p
 | `GO_SERVICE_ADDR` | `:8090` | HTTP listen address for `cmd/server` |
 | `GO_SERVICE_CACHE_PATH` | `./data/cache.db` | Path to the bbolt cache file |
 | `FEED_SYNC_INTERVAL_DAYS` | `30` | Automatic feed-refresh cadence (`cmd/server` only — the CLI only syncs when you tell it to) |
+| `GOOGLE_SAFE_BROWSING_API_KEY` | *(unset)* | Enables the Safe Browsing URL-reputation source. Unset by default — Google's no-cost tier ToS restricts it to non-commercial use and caps request volume, so this stays opt-in rather than on by default like the keyless sources (urlscan.io, GreyNoise Community, the geo-consensus trio) |
 
 ### Database Schema (Key Tables)
 

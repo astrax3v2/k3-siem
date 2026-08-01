@@ -121,6 +121,7 @@ func LookupIP(ctx context.Context, client *httpx.Client, store *cache.Store, ip 
 		"reverse_dns":   func(ctx context.Context) (any, bool) { return reverseDNS(ctx, ip), true },
 		"rdap":          func(ctx context.Context) (any, bool) { return rdapLookup(ctx, client, "ip", ip), true },
 		"greynoise":     func(ctx context.Context) (any, bool) { return lookupGreyNoise(ctx, client, ip), true },
+		"urlscan":       func(ctx context.Context) (any, bool) { return lookupURLScan(ctx, client, "page.ip", ip), true },
 		"virustotal": func(ctx context.Context) (any, bool) {
 			return vtLookup(ctx, client, "ip_addresses", ip), vtConfigured()
 		},
@@ -186,7 +187,26 @@ func LookupDomain(ctx context.Context, client *httpx.Client, store *cache.Store,
 	result := runSources(ctx, domain, "domain", map[string]sourceFunc{
 		"rdap":       func(ctx context.Context) (any, bool) { return rdapLookup(ctx, client, "domain", domain), true },
 		"crtsh":      func(ctx context.Context) (any, bool) { return crtSh(ctx, client, domain), true },
+		"urlscan":    func(ctx context.Context) (any, bool) { return lookupURLScan(ctx, client, "page.domain", domain), true },
 		"virustotal": func(ctx context.Context) (any, bool) { return vtLookup(ctx, client, "domains", domain), vtConfigured() },
+	})
+	setCached(store, key, result)
+	return result
+}
+
+// LookupURL fans out to urlscan.io (keyless — historical scans of this exact URL, if any) and
+// Google Safe Browsing (requires GOOGLE_SAFE_BROWSING_API_KEY; unconfigured by default, see
+// safeBrowsingLookup's comment on why). This is new: previously the only URL-shaped IOC handling
+// was cache matching against threat-intel feeds, with no on-demand reputation lookup for a URL
+// hit the way IPs/domains/hashes already had.
+func LookupURL(ctx context.Context, client *httpx.Client, store *cache.Store, target string, ttl time.Duration) Result {
+	key := cacheKey("url", target)
+	if cached, ok := getCached(store, key, ttl); ok {
+		return cached
+	}
+	result := runSources(ctx, target, "url", map[string]sourceFunc{
+		"urlscan":       func(ctx context.Context) (any, bool) { return lookupURLScan(ctx, client, "page.url", target), true },
+		"safe_browsing": func(ctx context.Context) (any, bool) { return safeBrowsingLookup(ctx, client, target), safeBrowsingConfigured() },
 	})
 	setCached(store, key, result)
 	return result

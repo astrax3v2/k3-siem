@@ -30,6 +30,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
     response shape, zero frontend changes) and the new offline-analysis route. The live
     ingestion pipeline, real-time correlation, and IOC-match alerting are untouched - this is
     additive, not a replacement of Node's own threat-intel feed sync.
+- **10 more curated threat-intel feeds (23 total) and 5 more OSINT sources**, aimed squarely at
+  digital-forensic investigation where evidence is offline logs and images rather than live
+  traffic:
+  - New feeds: Tor Bulk Exit List, SANS ISC DShield Block List, Team Cymru Fullbogons IPv4,
+    GreenSnow Blocklist, Emerging Threats Compromised IPs, DigitalSide OSINT IPs/URLs/Domains,
+    botvrij.eu Domain Blocklist, PhishStats Recent - all keyless, all wired into the same bbolt
+    cache and sync path as the original 13.
+  - **Three independent IP geolocation sources** (ip-api.com, freeipapi.com, ipwho.is) cross-
+    checked into a `GeoConsensus` score ("N/M sources agree on country X") instead of trusting a
+    single provider - shown in both the OSINT panel and the offline-analysis HTML report.
+  - **GreyNoise Community API** (keyless) classifies a hit IP as internet-background scan noise,
+    a known-benign service, or neither - separates opportunistic scanning from a targeted attack
+    in a forensic report.
+  - **urlscan.io** (keyless Search API) surfaces prior scans of a hit IP/domain/URL - contacted
+    infrastructure, TLS/hosting details, and a link to the archived screenshot, useful when the
+    original site is long gone by the time an investigator looks at the evidence.
+  - **Google Safe Browsing** URL reputation - off by default behind `GOOGLE_SAFE_BROWSING_API_KEY`
+    (unset in `.env.example`), since Google's no-cost tier restricts it to non-commercial use; a
+    new `GET /api/osint/url` route (and `analyzer-cli sync osint --type url`) exposes it.
+  - `EnrichLive` (live OSINT enrichment during offline analysis) only ever touches the specific
+    IPs/domains/URLs that show up as hits in one evidence run, never the whole IOC cache, so free
+    API quotas stay intact regardless of cache size.
+- **Image metadata extraction for photographic evidence** - a new `internal/imagemeta` package
+  (pure Go, no cgo, via `github.com/bep/imagemeta`) pulls EXIF/IPTC/XMP out of JPEG, PNG, TIFF,
+  WebP, HEIC/HEIF, AVIF, and common RAW formats (DNG/CR2/NEF/ARW/PEF): GPS coordinates (with a
+  ready-to-click map link), capture timestamp, camera make/model, and software/editing history.
+  `analyzer.Analyze()` now accepts a single image, a single log file, or a whole evidence
+  directory mixing both - each file is routed by content, log hits and image metadata land in
+  one combined JSON/HTML report, and non-text binary files encountered in a directory (PDFs,
+  archives, the cache database itself) are skipped rather than scanned as garbage log lines.
 - **Automated incident analysis reporting** - a one-click "Generate Report" action on any case
   assembles a narrative summary (entities involved, MITRE tactics observed, threat-intel
   matches), resolves every IOC-matched alert back to its source feed/indicator/confidence via a

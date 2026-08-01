@@ -47,6 +47,7 @@ services:
       SHODAN_API_KEY: ${SHODAN_API_KEY:-}
       OTX_API_KEY: ${OTX_API_KEY:-}
       PHISHTANK_APP_KEY: ${PHISHTANK_APP_KEY:-}
+      GOOGLE_SAFE_BROWSING_API_KEY: ${GOOGLE_SAFE_BROWSING_API_KEY:-}
     volumes:
       - go_service_data:/app/data
     healthcheck:

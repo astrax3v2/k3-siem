@@ -18,7 +18,7 @@ import (
 // only when live network access is acceptable; Analyze() itself never does this.
 func EnrichLive(ctx context.Context, client *httpx.Client, store *cache.Store, result *Result) {
 	type target struct {
-		kind  string // "ip" | "domain"
+		kind  string // "ip" | "domain" | "url"
 		value string
 	}
 	seen := map[target]bool{}
@@ -62,6 +62,8 @@ func EnrichLive(ctx context.Context, client *httpx.Client, store *cache.Store, r
 				res = osint.LookupIP(ctx, client, store, t.value, osint.DefaultTTL)
 			case "domain":
 				res = osint.LookupDomain(ctx, client, store, t.value, osint.DefaultTTL)
+			case "url":
+				res = osint.LookupURL(ctx, client, store, t.value, osint.DefaultTTL)
 			}
 			mu.Lock()
 			fetched[t] = res
