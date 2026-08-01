@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-08-01
+
+A major version bump: this release adds an entire new Go service alongside the existing
+Node.js/React stack, turning K3 SIEM from a live-monitoring SIEM into one that also supports
+offline/air-gapped digital-forensic investigation - offline log + image evidence analysis, a
+23-feed threat-intel cache, and 9-source OSINT enrichment with cross-corroborating geolocation.
+
 ### Added
 - **New Go service (`go-service/`) for OSINT enrichment, threat-intel feed caching, and
   offline log analysis** - a standalone module built for concurrent, low-memory-footprint work

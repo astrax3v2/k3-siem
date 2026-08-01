@@ -120,7 +120,7 @@ export default function Layout({ children, connected, liveAlertCount = 0 }) {
             );
           })}
           <div style={{ marginTop: 'auto', padding: '8px 14px', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text3)' }}>
-            <div>K3 SIEM v2.0.0</div>
+            <div>K3 SIEM v3.0.0</div>
           </div>
         </div>
 

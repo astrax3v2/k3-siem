@@ -1,6 +1,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/K3-SIEM-gold?style=for-the-badge&labelColor=0d1117" alt="K3 SIEM" />
-  <img src="https://img.shields.io/badge/version-2.0-blue?style=for-the-badge&labelColor=0d1117" alt="Version" />
+  <img src="https://img.shields.io/badge/version-3.0-blue?style=for-the-badge&labelColor=0d1117" alt="Version" />
   <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge&labelColor=0d1117" alt="License" />
 </p>
 
@@ -14,6 +14,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Node.js-22-339933?logo=nodedotjs&logoColor=white" />
   <img src="https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white" />
+  <img src="https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white" />
   <img src="https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white" />
   <img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" />
   <img src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white" />
@@ -44,6 +45,12 @@
 
 K3 SIEM is a full-stack **Security Information and Event Management** platform inspired by **Microsoft Sentinel** and **SentinelOne**. It provides real-time security monitoring, threat detection, incident response, and automated playbook execution — all from a unified dark-themed security operations interface. Analysts land on a unified **Triage Command Center**, and every chart, KPI tile, and table row across the dashboards is clickable straight through to the filtered alerts/incidents behind it.
 
+**v3.0** adds a standalone Go service for the parts of an investigation that can't wait on live
+monitoring: a 23-feed threat-intel cache, 9-source OSINT enrichment (with three independent
+geolocation sources cross-checked into a consensus score), and an offline analyzer that reads
+logs *and* photographic evidence (EXIF/IPTC/XMP, including GPS) — all of it able to run fully
+air-gapped once its cache is populated. See [Offline Analyzer](#-offline-analyzer-go-service).
+
 ### What Makes K3 SIEM Different
 
 | Feature | Description |
@@ -60,6 +67,8 @@ K3 SIEM is a full-stack **Security Information and Event Management** platform i
 | 📚 **Custom Dashboard Builder** | Drag-in widget dashboards from 5 built-in templates or build your own from 13 widget types |
 | 👥 **Team-Scoped RBAC & SLA** | Alerts/incidents/agents scope to a team, with severity-based ack/resolve SLA targets and breach flags |
 | 🖱️ **Clickable Dashboards** | Every chart, tile, and feed row drills straight into a pre-filtered Alerts/Incidents view |
+| 🔬 **Offline Digital-Forensics Analyzer** *(v3.0)* | Go service analyzes logs and image evidence (EXIF/GPS) against a 23-feed IOC cache with zero live network access required |
+| 🗺️ **Multi-Source Geo Corroboration** *(v3.0)* | Three independent IP geolocation providers cross-checked into an "N/M sources agree" consensus instead of trusting one |
 
 ---
 
