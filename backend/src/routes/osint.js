@@ -43,4 +43,10 @@ router.get('/email', authenticate, async (req, res) => {
   await proxyGet(res, `/v1/osint/email?email=${encodeURIComponent(email)}`);
 });
 
+router.get('/url', authenticate, async (req, res) => {
+  const url = (req.query.url || '').trim();
+  if (!url) return res.status(400).json({ error: 'url is required' });
+  await proxyGet(res, `/v1/osint/url?url=${encodeURIComponent(url)}`);
+});
+
 module.exports = router;

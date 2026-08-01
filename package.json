@@ -1,6 +1,6 @@
 {
   "name": "k3-siem",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "K3 SIEM Platform - Enterprise Security Operations",
   "scripts": {
     "install:all": "cd backend && npm install && cd ../frontend && npm install",

@@ -45,6 +45,7 @@ export const eventsApi = {
 // Offline log analyzer (Go service) — deep OSINT-enriched IOC report over a batch of logs,
 // independent of the live ingestion pipeline eventsApi.import() drives.
 export const analyzeApi = {
+  offline: (data) => api.post('/analyze/offline', data),
   offlineHtml: (data) => api.post('/analyze/offline', data, { params: { format: 'html' }, responseType: 'text' }),
 };
 
@@ -141,6 +142,7 @@ export const osintApi = {
   lookupDomain: (domain) => api.get('/osint/domain', { params: { domain } }),
   lookupHash: (hash) => api.get('/osint/hash', { params: { hash } }),
   lookupEmail: (email) => api.get('/osint/email', { params: { email } }),
+  lookupUrl: (url) => api.get('/osint/url', { params: { url } }),
 };
 
 export const teamsApi = {
