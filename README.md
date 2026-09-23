@@ -1,6 +1,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/K3-SIEM-gold?style=for-the-badge&labelColor=0d1117" alt="K3 SIEM" />
-  <img src="https://img.shields.io/badge/version-2.0-blue?style=for-the-badge&labelColor=0d1117" alt="Version" />
+  <img src="https://img.shields.io/badge/version-3.0-blue?style=for-the-badge&labelColor=0d1117" alt="Version" />
   <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge&labelColor=0d1117" alt="License" />
 </p>
 
@@ -14,6 +14,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Node.js-22-339933?logo=nodedotjs&logoColor=white" />
   <img src="https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white" />
+  <img src="https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white" />
   <img src="https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white" />
   <img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" />
   <img src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white" />
@@ -44,6 +45,12 @@
 
 K3 SIEM is a full-stack **Security Information and Event Management** platform inspired by **Microsoft Sentinel** and **SentinelOne**. It provides real-time security monitoring, threat detection, incident response, and automated playbook execution all from a unified dark-themed security operations interface. Analysts land on a unified **Triage Command Center**, and every chart, KPI tile, and table row across the dashboards is clickable straight through to the filtered alerts/incidents behind it.
 
+**v3.0** adds a standalone Go service for the parts of an investigation that can't wait on live
+monitoring: a 23-feed threat-intel cache, 9-source OSINT enrichment (with three independent
+geolocation sources cross-checked into a consensus score), and an offline analyzer that reads
+logs *and* photographic evidence (EXIF/IPTC/XMP, including GPS) — all of it able to run fully
+air-gapped once its cache is populated. See [Offline Analyzer](#-offline-analyzer-go-service).
+
 ### What Makes K3 SIEM Different
 
 | Feature | Description |
@@ -52,14 +59,16 @@ K3 SIEM is a full-stack **Security Information and Event Management** platform i
 | 🕵️ **Agent-Based Collection** | Deploy Python agents on real endpoints (Windows/Linux/Network) to collect and forward logs |
 | ⚡ **Real-Time Streaming** | WebSocket-powered live event and alert feeds zero polling |
 | 🔍 **KQL Query Engine** | Kusto Query Language transpiled to SQL for threat hunting |
-| 🤖 **SOAR Automation** | Execute playbooks with step-by-step progress tracking |
-| 🧠 **UEBA Analytics** | ML-inspired user behavior analytics with anomaly scoring |
+| 🤖 **SOAR Automation** | One-click playbook execution against a selected alert from the Triage queue, with step-by-step progress tracking |
 | 🎯 **MITRE ATT&CK Mapping** | Every alert mapped to MITRE tactics and techniques |
 | 🛡️ **CVE Vulnerability Scanning** | Agents query the real NVD CVE API to surface exploitable software/OS versions per asset |
 | 🧬 **OCSF Auto-Normalization** | Every ingested event is auto-classified and mapped onto the Open Cybersecurity Schema Framework |
 | 📚 **Custom Dashboard Builder** | Drag-in widget dashboards from 5 built-in templates or build your own from 13 widget types |
 | 👥 **Team-Scoped RBAC & SLA** | Alerts/incidents/agents scope to a team, with severity-based ack/resolve SLA targets and breach flags |
 | 🖱️ **Clickable Dashboards** | Every chart, tile, and feed row drills straight into a pre-filtered Alerts/Incidents view |
+| 🔬 **Offline Digital-Forensics Analyzer** *(v3.0)* | Go service analyzes logs and image evidence (EXIF/GPS) against a 23-feed IOC cache with zero live network access required |
+| 🗺️ **Multi-Source Geo Corroboration** *(v3.0)* | Three independent IP geolocation providers cross-checked into an "N/M sources agree" consensus instead of trusting one |
+| 🕸️ **Link Analysis** *(v3.0)* | Maltego-style entity-relationship graph for a case — pan/zoom, click any IP/domain/hash/email/URL node to pivot straight into OSINT |
 
 ---
 
@@ -80,10 +89,9 @@ K3 SIEM is a full-stack **Security Information and Event Management** platform i
   </tr>
   <tr>
     <td width="50%"><strong>Correlation Engine</strong><br/><img src="docs/screenshots/correlation.png" alt="Correlation Engine" /></td>
-    <td width="50%"><strong>SOAR Playbooks</strong><br/><img src="docs/screenshots/soar.png" alt="SOAR" /></td>
+    <td width="50%"><strong>Agent Management</strong><br/><img src="docs/screenshots/agents.png" alt="Agent Management" /></td>
   </tr>
   <tr>
-    <td width="50%"><strong>Agent Management</strong><br/><img src="docs/screenshots/agents.png" alt="Agent Management" /></td>
     <td width="50%"><strong>KQL Query Engine</strong><br/><img src="docs/screenshots/kql-engine.png" alt="KQL Engine" /></td>
   </tr>
 </table>
@@ -101,16 +109,15 @@ K3 SIEM is a full-stack **Security Information and Event Management** platform i
 - **📡 Related Raw Events** panel showing events tied to the selected item's asset/user/IP
 
 ### 📊 Security Operations Dashboard (`/overview`)
-- **4 KPI Tiles**  Alerts (24h) with critical count, Open Incidents, Events Indexed (24h), SOAR Executions — each tile is clickable through to the matching filtered view
-- **14-Day Alert Trend** Area chart showing alert volume over time click through to Alert Manager
+- **4 KPI Tiles**  Alerts (24h) with critical count, Open Incidents, Events Indexed (24h), SOAR Executions — the first three link through to Alert Manager/Case Management/Event Explorer; SOAR Executions is a count only (playbook execution itself happens inline from Triage, not a dedicated page)
+- **14-Day Alert Trend** Area chart showing alert volume over time — click through to Alert Manager
 - **Severity Distribution** Bar chart breakdown (Critical / High / Medium / Low / Info) — click a bar to open Alert Manager pre-filtered to that severity
-- **⚡ Live Alert Feed** Real-time WebSocket stream of the latest 5 security alerts with MITRE technique tags click a row to jump straight to that alert's detail panel
-- **📡 Live Event Stream** Top 10 raw events streaming live with green pulse indicator click a row to open Event Explorer filtered to that host/user/IP
-- **🎯 Top MITRE Tactics** Ranked breakdown of MITRE ATT&CK tactics across all alerts click a tactic to filter Alert Manager to it
-- **📊 Alert Status Summary** New / Assigned / In Progress / Closed counts click a status to filter Alert Manager
-- **🔢 Platform Stats** IOC Hits, High-Risk Users, SOAR Runs, Events (24h) each links to its module
-- **🖥️ Agent Status** and
--  **📦 Asset Overview** tiles link to Agent Manager and Asset Inventory
+- **⚡ Live Alert Feed** Real-time WebSocket stream of the latest 5 security alerts with MITRE technique tags — click a row to jump straight to that alert's detail panel
+- **📡 Live Event Stream** Top 10 raw events streaming live with green pulse indicator — click a row to open Event Explorer filtered to that host/user/IP
+- **🎯 Top MITRE Tactics** Ranked breakdown of MITRE ATT&CK tactics across all alerts — click a tactic to filter Alert Manager to it
+- **📊 Alert Status Summary** New / Assigned / In Progress / Closed counts — click a status to filter Alert Manager
+- **🔢 Platform Stats** IOC Hits, High-Risk Users, SOAR Runs, Events (24h) — IOC Hits and Events (24h) link to Threat Intel/Event Explorer; High-Risk Users and SOAR Runs are counts only (the UEBA risk-scoring engine and SOAR playbook runner are both real and still running server-side, just without a dedicated browsing page today)
+- **🖥️ Agent Status** and **📦 Asset Overview** tiles link to Agent Manager and Asset Inventory
 
 ### 🚨 Alert Manager
 - **Severity Filters** Quick filter buttons: All, Critical, High, Medium, Low
@@ -140,6 +147,11 @@ K3 SIEM is a full-stack **Security Information and Event Management** platform i
 - **📋 Generate Report** one-click automated analysis report: a narrative summary, entities
   involved, MITRE tactics observed, and every threat-intel-matched alert resolved back to its
   source feed/indicator/confidence score, with a PDF export
+- **🕸️ Link Analysis** *(v3.0)* a Maltego-style entity-relationship graph built from the same
+  report data — the case at the center, its alerts, and every asset/user/IP/IOC that shows up
+  across them; pan/zoom, hover a node to highlight its connections, click any IP/domain/hash/
+  email/URL to pivot into the OSINT panel. Reachable from the case detail panel or from inside
+  a generated report
 - **🌳 Process Tree Link** Cases with a reconstructed attack chain show a "View Process
   Tree" button opening the full investigation view (see below)
 
@@ -223,13 +235,16 @@ to full compromise, reachable from any incident with a reconstructed attack chai
 - **🗺️ Threat Origins** Geographic breakdown: Russia, China, N. Korea, Iran, Anonymous
 - This page's feed sync and IOC store are still Node's own (`backend/src/services/connectors/feedSync.js`,
   5-minute cadence) so real-time IOC-match alerting on live-ingested events keeps working
-  unchanged. The new Go service (below) maintains an independent copy of the same 13 feeds in
-  its own disk cache, purpose-built for the offline analyzer — the two aren't unified yet; see
+  unchanged. The Go service (below) maintains its own, larger disk cache — the same 13 feeds
+  plus 10 more curated for digital-forensics use (23 total), purpose-built for the offline
+  analyzer — the two feed sets aren't unified yet; see
   [Offline Analyzer](#-offline-analyzer-go-service)
 
 ### 🔎 OSINT Enrichment
-- **One-click pivot** from any IP, domain, hash, or email — on an alert, a case report, or an
-  import result — to RDAP/WHOIS, geolocation, VirusTotal, AbuseIPDB, and Shodan
+- **One-click pivot** from any IP, domain, URL, hash, or email — on an alert, a case report, or
+  an import result — to RDAP/WHOIS, three cross-corroborating geolocation sources, VirusTotal,
+  AbuseIPDB, Shodan, GreyNoise (scanner vs. targeted-attack classification), urlscan.io
+  (keyless historical-scan lookup), and Google Safe Browsing (opt-in, see the env var table)
 - **Parsed, readable fields** per source instead of a raw JSON dump, with a "View Raw JSON"
   toggle when the original payload is needed
 - Sources that aren't configured (no API key set) show a clear "Not configured" state rather
@@ -238,35 +253,24 @@ to full compromise, reachable from any incident with a reconstructed attack chai
   behind a disk-backed cache that survives a backend restart — the lookup panel's API contract
   is unchanged, `backend/src/routes/osint.js` is now a thin proxy
 
-### 👤 UEBA (User & Entity Behavior Analytics)
-- **Stats**: High Risk Users, Total Anomalies, Users Monitored
-- **Sort Options**: Risk Score, Anomalies, Name
-- **User Risk Table**: Username, Department, Risk Score (color-coded bar), Anomaly count badge, Behavior flags, Location, Last Active
-- **🧠 ML Baseline Deviations**:
-  - Login Time Anomaly Off-hours access detection
-  - Geo-Velocity Impossible travel detection
-  - Peer Group Deviation File access pattern outliers
-  - Data Volume Spike Download volume exceeding 30-day baseline
+### 👤 UEBA (User & Entity Behavior Analytics) — engine only, no dedicated page
+`userRiskEngine.js` still runs continuously in the backend, computing statistical anomaly
+scores per user (login-time histograms, geo-velocity, peer-group/data-volume z-scores) and
+exposing them via `GET /api/ueba/scores`. **The dedicated UEBA browsing page was retired** —
+its route now redirects into Case Management, and only a "High-Risk Users" count survives as
+an Overview dashboard KPI tile. Call the API directly if you need the underlying scores today.
 
-### ⚙️ SOAR (Security Orchestration, Automation & Response)
-- **Stats**: Active Playbooks, Total Executions, Avg Response Time, Recent Executions
-- **Playbook Grid** (2 columns):
-  - Name + status badge (Active/Paused) + execution count
-  - Trigger condition display
-  - **Live Execution Progress** Step-by-step progress bar with completion percentage
-  - Numbered step circles (completed = green checkmark ✓)
-  - Execute / Edit buttons (role-gated)
-  - **Inline Playbook Editing** update playbook name, trigger, status, and steps directly in the UI
-- **Built-in Playbooks**:
-  - 🔐 Brute Force Response Block IP, reset password, create ticket, notify SOC
-  - 🦠 Malware Containment Isolate endpoint, collect forensics, block hash, alert team
-  - 🎣 Phishing Response Extract IOCs, block sender, scan mailboxes, update filters
-  - 🔑 Privilege Escalation Revoke tokens, audit access, reset credentials, review logs
-- **🔗 Integration Connectors** (8):
-  - Jira (ticket creation), Slack (SOC notifications), CrowdStrike (endpoint isolation)
-  - Palo Alto (firewall block), ServiceNow (ITSM), MS Teams (notifications)
-  - MISP (IOC sharing), Email (analyst alerts)
-- **📋 Execution History** Playbook ID, triggered by, status, steps completed, timestamps
+### ⚙️ SOAR — playbook execution, no dedicated console
+Playbook execution is real and wired into the Triage Command Center: selecting an alert
+suggests its matching playbook(s), and running one (`POST /api/soar/playbooks/:id/execute`)
+shows live step-by-step progress inline in the detail panel. **What no longer exists is a
+separate SOAR page** to browse the full playbook catalog, edit playbooks, or page through
+execution history — that route now redirects into Case Management too.
+- **Built-in Playbooks**: 🔐 Brute Force Response, 🦠 Malware Containment, 🎣 Phishing
+  Response, 🔑 Privilege Escalation — each a named sequence of steps (block IP, isolate
+  endpoint, notify SOC, etc.)
+- **🔗 Integration Connectors** (8): Jira, Slack, CrowdStrike, Palo Alto, ServiceNow, MS Teams,
+  MISP, Email — real HTTP calls when configured, an honest "not configured" otherwise
 
 ### 🖥️ Agent Management
 - **Agent Stats**: Total Agents, Online (green), Stale (yellow), Offline (red), Events Collected
@@ -282,14 +286,18 @@ to full compromise, reachable from any incident with a reconstructed attack chai
   - **Install Script** — generates a copy-paste `curl | bash` / PowerShell one-liner per OS for
     environments where inbound SSH from the SIEM isn't allowed
 
-### 🛡️ Vulnerability Scanner & Asset Inventory
+### 🛡️ Vulnerability Scanning & Asset Inventory
 - **Real CVE Matching** agents query the live [NVD CVE API](https://nvd.nist.gov/) for every
   piece of installed software and the host OS, rescanning roughly every 30 minutes; simulated
   agents use a curated, realistic CVE dataset instead so demos work without network egress
 - **`K3_VULN_SCAN`** toggles scanning on/off per agent; **`K3_NVD_API_KEY`** raises the NVD rate
   limit from 5 to 50 requests/30s
-- **Vulnerability Table**: CVE ID, affected software/OS + version, CVSS score, severity
-  (Critical/High/Medium/Low), publish/modified dates, filterable by agent/severity/search
+- **Per-Asset Vulnerabilities**: CVE ID, CVSS score, severity badge, and affected software/
+  version shown directly in each asset's detail panel in Asset Inventory. *(The earlier
+  standalone, fleet-wide filterable "Vulnerability Scanner" page has been retired — its route
+  now redirects into Case Management; the same data is still queryable via
+  `GET /api/agents/assets/vulnerabilities` and surfaces in the "Vulnerability Summary" widget
+  on custom dashboards.)*
 - **Asset Inventory**: hardware (CPU, RAM, disk), OS, installed software, running services, open
   ports, local users, AV/firewall status, domain, and per-asset compliance rollup
 - **Compliance Scoring** an asset counts as compliant when firewall is enabled and antivirus is
@@ -392,15 +400,17 @@ k3-siem/
 │       │   ├── Agents/AgentManager.jsx  # 🖥️ Agent management + remote deploy UI
 │       │   ├── Inventory/
 │       │   │   ├── AssetInventory.jsx   # 📦 Hardware/software/compliance per asset
-│       │   │   └── VulnerabilityScanner.jsx # 🛡️ CVE findings table
+│       │   │   └── VulnerabilityScanner.jsx # 🛡️ CVE findings table (currently unrouted — see note above)
 │       │   ├── OCSF/OCSFParser.jsx      # 🧬 Paste-a-log OCSF normalization view
 │       │   ├── Admin/TeamManagement.jsx # 👥 Team CRUD + user role assignment
 │       │   ├── Investigation/ProcessTree.jsx # 🌳 Attack chain process tree
+│       │   ├── Investigation/LinkAnalysisGraph.jsx # 🕸️ Maltego-style entity graph (v3.0)
+│       │   ├── Analysis/OfflineAnalysisPanel.jsx # 🔬 Inline offline analysis report (v3.0)
 │       │   ├── KQL/KQLEngine.jsx        # 🔍 Query editor + results
 │       │   ├── Layout/Layout.jsx        # 📐 Topbar + sidebar navigation
 │       │   ├── Layout/Auth.jsx          # 🔐 Login + auth context
-│       │   └── Pages.jsx                # 📄 Events, Incidents, Correlation,
-│       │                                #    Threat Intel, UEBA, SOAR
+│       │   └── Pages.jsx                # 📄 Events, Incidents, Correlation, Threat Intel
+│       │                                #    (also exports unrouted UEBA/SOAR views — see note above)
 │       ├── hooks/useWebSocket.js        # 🔌 WebSocket connection hook
 │       └── services/api.js              # 📡 Axios API client
 │
@@ -417,10 +427,11 @@ k3-siem/
 │   └── internal/
 │       ├── ioc/                         # Indicator type, normalization, CIDR matching
 │       ├── cache/                       # bbolt-backed disk cache (IOCs, OSINT, feed metadata)
-│       ├── feeds/                       # The 13 threat-intel feed definitions + parsers
-│       ├── osint/                       # VirusTotal/AbuseIPDB/Shodan/RDAP/rDNS/crt.sh/geoip
+│       ├── feeds/                       # 23 threat-intel feed definitions + parsers
+│       ├── osint/                       # VT/AbuseIPDB/Shodan/RDAP/rDNS/crt.sh/urlscan/Safe Browsing/GreyNoise/3x geoip
+│       ├── imagemeta/                   # EXIF/IPTC/XMP extraction (GPS, capture time, camera) for image evidence
 │       ├── ocsf/                        # Go port of the 17-vendor-profile log parser
-│       ├── analyzer/                    # Streaming, worker-pooled IOC-matching log analyzer
+│       ├── analyzer/                    # Streaming, worker-pooled log+image evidence analyzer
 │       ├── report/                      # JSON + self-contained HTML report rendering
 │       ├── api/                         # HTTP handlers shared by cmd/server
 │       └── scheduler/                   # 30-day automatic feed-refresh ticker
@@ -475,11 +486,11 @@ k3-siem/
                     │  Triage      │
                     │  Dashboards  │
                     │  Alerts      │
-                    │  Incidents   │
+                    │  Cases       │
                     │  Agents      │
                     │  Inventory   │
                     │  KQL Engine  │
-                    │  SOAR        │
+                    │  Threat Intel│
                     └──────────────┘
 ```
 
@@ -590,14 +601,14 @@ hands you a copy-paste install script) straight from the UI. See "Remote Deploym
 ### 📊 Dashboard (`/overview`)
 | Section | Details |
 |---------|---------|
-| **KPI Tiles** | Alerts (24h) · Open Incidents · Events Indexed · SOAR Executions click through to each module |
-| **Alert Trend Chart** | 14-day area chart with gradient fill click to open Alert Manager |
-| **Severity Chart** | Bar chart: Critical (red), High (orange), Medium (blue), Low (green) click a bar to filter Alert Manager |
-| **Live Alert Feed** | Real-time WebSocket stream with MITRE technique badges click a row to open that alert |
-| **Live Event Stream** | Raw events with green pulse animation click a row to open Event Explorer filtered to it |
-| **MITRE Tactics** | Ranked breakdown with horizontal progress bars click to filter Alert Manager by tactic |
-| **Alert Status** | New / Assigned / In Progress / Closed counts click to filter by status |
-| **Platform Stats** | IOC Hits · High-Risk Users · SOAR Runs · Events (24h) each links to its module |
+| **KPI Tiles** | Alerts (24h) · Open Incidents · Events Indexed click through to their module; SOAR Executions is a count only |
+| **Alert Trend Chart** | 14-day area chart with gradient fill — click to open Alert Manager |
+| **Severity Chart** | Bar chart: Critical (red), High (orange), Medium (blue), Low (green) — click a bar to filter Alert Manager |
+| **Live Alert Feed** | Real-time WebSocket stream with MITRE technique badges — click a row to open that alert |
+| **Live Event Stream** | Raw events with green pulse animation — click a row to open Event Explorer filtered to it |
+| **MITRE Tactics** | Ranked breakdown with horizontal progress bars — click to filter Alert Manager by tactic |
+| **Alert Status** | New / Assigned / In Progress / Closed counts — click to filter by status |
+| **Platform Stats** | IOC Hits · Events (24h) click through; High-Risk Users · SOAR Runs are counts only (no dedicated page currently) |
 
 ### 🚨 Alert Manager
 | Feature | Details |
@@ -608,13 +619,12 @@ hands you a copy-paste install script) straight from the UI. See "Remote Deploym
 | **Detail Panel** | Full metadata · Status update buttons · Create Incident · Risk visualization |
 | **Live Updates** | New alerts prepended via WebSocket with deduplication, filtered to match the active view |
 
-### 🛡️ Vulnerability Scanner
+### 🛡️ Vulnerability Scanning — per-asset panel, no dedicated page
 | Feature | Details |
 |---------|---------|
 | **CVE Source** | Real NVD CVE API lookups per installed software/OS (simulated agents use a curated dataset) |
-| **Table Columns** | CVE ID · Software/OS + version · CVSS score · Severity · Published/modified · Status |
-| **Filters** | Agent · Severity · Free-text search across CVE ID/software/description |
-| **Stats** | Total, Critical/High/Medium/Low counts, affected asset count |
+| **Access** | Per-asset CVE list (CVE ID · CVSS · severity · software/version) in the Asset Inventory detail panel |
+| **Removed** | The standalone, fleet-wide filterable Vulnerability Scanner page — its route now redirects into Case Management; the data is still reachable via `GET /api/agents/assets/vulnerabilities` and the "Vulnerability Summary" dashboard widget |
 
 ### 📦 Asset Inventory
 | Feature | Details |
@@ -681,13 +691,15 @@ hands you a copy-paste install script) straight from the UI. See "Remote Deploym
 | **Workflow** | Open → In Progress → Contained → Eradicated → Recovered → Closed |
 | **Detail** | Metadata · Linked alerts table · Investigation notes with timestamps |
 | **Analysis Report** | One-click narrative summary · MITRE tactics · resolved threat-intel context · PDF export |
+| **Link Analysis** *(v3.0)* | Maltego-style entity graph (case → alerts → assets/users/IPs/IOCs), pan/zoom, click a node to pivot into OSINT |
 
-### ⚙️ SOAR Playbooks
+### ⚙️ SOAR Playbooks — execution only, no console page
 | Feature | Details |
 |---------|---------|
 | **Playbooks** | Brute Force · Malware · Phishing · Privilege Escalation |
-| **Execution** | Live progress bar · Step checkmarks · Completion message · inline editing for supported roles |
+| **Execution** | Triggered from an alert in Triage — live progress bar, step checkmarks, completion message |
 | **Connectors** | Jira · Slack · CrowdStrike · Palo Alto · ServiceNow · Teams · MISP · Email |
+| **Removed** | The standalone SOAR page (playbook catalog browsing, inline editing, execution history) — its route now redirects into Case Management |
 
 ### 🔴 Threat Intelligence
 | Feature | Details |
@@ -699,16 +711,16 @@ hands you a copy-paste install script) straight from the UI. See "Remote Deploym
 ### 🔎 OSINT Enrichment
 | Feature | Details |
 |---------|---------|
-| **Sources** | RDAP/WHOIS · Geolocation · VirusTotal · AbuseIPDB · Shodan |
+| **Sources** | RDAP/WHOIS · 3-source geolocation consensus · VirusTotal · AbuseIPDB · Shodan · GreyNoise · urlscan.io · Google Safe Browsing (opt-in) |
 | **Display** | Parsed, labeled fields per source with a raw-JSON toggle |
 | **Entry Points** | Alert detail · Case analysis report · Import analysis results |
 
-### 👤 UEBA
+### 👤 UEBA — backend engine only, no dedicated page
 | Feature | Details |
 |---------|---------|
-| **Risk Scoring** | 0-100 color-coded bars (green → orange → red) |
-| **Anomaly Detection** | Login time · Geo-velocity · Peer group · Data volume |
-| **Flags** | Behavior flags per user with anomaly count badges |
+| **Risk Scoring** | Runs continuously server-side (login time · geo-velocity · peer group · data volume z-scores) |
+| **Access** | `GET /api/ueba/scores` directly, or the "High-Risk Users" count on the Overview dashboard |
+| **Removed** | The standalone UEBA page (per-user risk table, sort options, behavior flags) — its route now redirects into Case Management |
 
 ---
 
@@ -812,7 +824,8 @@ simulate: false
 - **Simulate mode**: returns a curated, realistic CVE dataset per OS profile so demos work with
   zero external network calls
 - Findings are stored per-agent (deduped by `agent_id` + `cve_id` + `software_name`) and surfaced
-  in the Vulnerability Scanner page and Asset Inventory detail panel
+  in each asset's detail panel in Asset Inventory (the earlier standalone Vulnerability Scanner
+  page has been retired — see [Vulnerability Scanning & Asset Inventory](#-vulnerability-scanning--asset-inventory))
 
 ### 🔌 Remote Deployment (SSH)
 
@@ -837,22 +850,40 @@ high-throughput, low-memory IOC/OSINT work and for analysis that needs to run **
 backend and no live internet access**, once its cache is populated.
 
 ### What it does
-- **Threat-intel feed sync** — the same 13 feeds as the Threat Intel page (AbuseIPDB, OTX
-  AlienVault, OpenPhish, PhishTank, Spamhaus DROP v4/v6, Feodo Tracker, SSLBL JA3, URLhaus,
-  ThreatFox, MalwareBazaar, Blocklist.de, CINS Army), fetched concurrently and stored in a
-  single-file, disk-backed cache ([bbolt](https://github.com/etcd-io/bbolt)) that survives
-  restarts — copy the cache file to another machine and it keeps working, no network required.
-- **OSINT enrichment** — VirusTotal, AbuseIPDB, Shodan, RDAP/WHOIS, reverse DNS, crt.sh, and
-  IP geolocation, cached the same way. This is what now powers the OSINT lookup panel
-  (`GET /api/osint/*` proxies to it) — see [OSINT Enrichment](#-osint-enrichment).
-- **Offline log analyzer** — streams a log file line-by-line through a CPU-core-sized worker
-  pool (memory stays flat regardless of file size), parses it with a Go port of the same
-  17-vendor-profile OCSF mapper the live pipeline uses, matches every candidate IP/hash/URL/
-  domain/email against the cached IOC set (including CIDR ranges), enriches any hit with
-  whatever OSINT data is already cached for it, and produces a JSON report plus a
-  self-contained HTML report (inline CSS, no external assets — opens in any browser, even
-  air-gapped). Reachable from the UI via **Event Explorer → Import Analysis →
-  ⬇ Offline Analysis Report**, or directly via `POST /api/analyze/offline`.
+- **Threat-intel feed sync — 23 feeds** — the original 13 (AbuseIPDB, OTX AlienVault, OpenPhish,
+  PhishTank, Spamhaus DROP v4/v6, Feodo Tracker, SSLBL JA3, URLhaus, ThreatFox, MalwareBazaar,
+  Blocklist.de, CINS Army) plus 10 more curated for digital-forensics use (Tor Bulk Exit List,
+  SANS ISC DShield Block List, Team Cymru Fullbogons IPv4, GreenSnow Blocklist, Emerging Threats
+  Compromised IPs, DigitalSide OSINT IPs/URLs/Domains, botvrij.eu Domain Blocklist, PhishStats
+  Recent) — all fetched concurrently and stored in a single-file, disk-backed cache
+  ([bbolt](https://github.com/etcd-io/bbolt)) that survives restarts — copy the cache file to
+  another machine and it keeps working, no network required.
+- **OSINT enrichment — 12 sources** — VirusTotal, AbuseIPDB, Shodan, RDAP/WHOIS, reverse DNS,
+  crt.sh, urlscan.io (keyless historical-scan lookup for IPs/domains/URLs — screenshots,
+  contacted infrastructure, TLS/hosting details), Google Safe Browsing (URL reputation; off by
+  default, requires `GOOGLE_SAFE_BROWSING_API_KEY` — see the env var table below for why),
+  GreyNoise Community (classifies an IP as internet-background scan noise vs. a known-benign
+  service vs. neither — separates opportunistic scanning from a targeted attack), and **three
+  independent IP geolocation sources** (ip-api.com, freeipapi.com, ipwho.is) cross-checked into a
+  single "N/M sources agree on country X" consensus rather than trusting one provider — all
+  cached the same way. This is what now powers the OSINT lookup panel (`GET /api/osint/*`
+  proxies to it) — see [OSINT Enrichment](#-osint-enrichment).
+- **Offline log + image analyzer** — point it at a single log file, a single image, or a whole
+  evidence directory mixing both:
+  - **Logs** stream line-by-line through a CPU-core-sized worker pool (memory stays flat
+    regardless of file size), parsed with a Go port of the same 17-vendor-profile OCSF mapper
+    the live pipeline uses, matched against the cached IOC set (IP/hash/URL/domain/email,
+    including CIDR ranges), and enriched with whatever OSINT data is already cached for a hit.
+  - **Images** (JPEG/PNG/TIFF/WebP/HEIC/AVIF/DNG/CR2/NEF/ARW/PEF) get read-only EXIF/IPTC/XMP
+    metadata extraction — GPS coordinates (with a ready-to-click map link), capture timestamp,
+    camera make/model, and software/editing history — the kind of embedded evidence relevant to
+    a digital-forensics investigation. A corrupt or non-image file degrades to a warning instead
+    of failing the run; non-text binary files encountered in a directory (PDFs, archives, the
+    cache file itself) are skipped rather than scanned as garbage log lines.
+  - Both produce one JSON report plus a self-contained HTML report (inline CSS, no external
+    assets — opens in any browser, even air-gapped) with a combined hits table and an image
+    evidence table. Reachable from the UI via **Event Explorer → Import Analysis →
+    ⬇ Offline Analysis Report**, or directly via `POST /api/analyze/offline`.
 - **Cache refresh — manual or automatic** — trigger a sync on demand
   (`analyzer-cli sync feeds` or `POST /api/intel/... ` → Go's `/v1/intel/feeds/sync`), or let
   the long-running server mode refresh it automatically every 30 days
@@ -944,11 +975,12 @@ intentionally independent for now — see the note in
 ### 🔎 OSINT & 🔬 Offline Analysis
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| `GET` | `/api/osint/ip` | JWT | IP enrichment (geo, reverse DNS, RDAP, VirusTotal, AbuseIPDB, Shodan) — proxies to the Go service |
-| `GET` | `/api/osint/domain` | JWT | Domain enrichment (RDAP, crt.sh, VirusTotal) |
+| `GET` | `/api/osint/ip` | JWT | IP enrichment (3-source geo consensus, reverse DNS, RDAP, VirusTotal, AbuseIPDB, Shodan, GreyNoise, urlscan.io) — proxies to the Go service |
+| `GET` | `/api/osint/domain` | JWT | Domain enrichment (RDAP, crt.sh, VirusTotal, urlscan.io) |
 | `GET` | `/api/osint/hash` | JWT | File hash reputation (VirusTotal) |
 | `GET` | `/api/osint/email` | JWT | Domain-level RDAP/MX for the email's domain |
-| `POST` | `/api/analyze/offline` | JWT (t1+) | `{content \| file_path}` → OSINT-enriched IOC analysis report (JSON, or HTML with `?format=html`), via the Go analyzer |
+| `GET` | `/api/osint/url` | JWT | URL reputation (urlscan.io historical scans, Google Safe Browsing if configured) |
+| `POST` | `/api/analyze/offline` | JWT (t1+) | `{content \| file_path}` → OSINT-enriched IOC/image-metadata analysis report (JSON, or HTML with `?format=html`), via the Go analyzer — accepts a log file, an image, or a directory mixing both |
 
 ### 🚨 Alerts
 | Method | Endpoint | Auth | Description |
@@ -1076,6 +1108,7 @@ so you don't need to duplicate secrets. Real environment variables always take p
 | `GO_SERVICE_ADDR` | `:8090` | HTTP listen address for `cmd/server` |
 | `GO_SERVICE_CACHE_PATH` | `./data/cache.db` | Path to the bbolt cache file |
 | `FEED_SYNC_INTERVAL_DAYS` | `30` | Automatic feed-refresh cadence (`cmd/server` only — the CLI only syncs when you tell it to) |
+| `GOOGLE_SAFE_BROWSING_API_KEY` | *(unset)* | Enables the Safe Browsing URL-reputation source. Unset by default — Google's no-cost tier ToS restricts it to non-commercial use and caps request volume, so this stays opt-in rather than on by default like the keyless sources (urlscan.io, GreyNoise Community, the geo-consensus trio) |
 
 ### Database Schema (Key Tables)
 

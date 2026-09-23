@@ -227,3 +227,77 @@ func shodanLookup(ctx context.Context, client *httpx.Client, ip string) any {
 	}
 	return data
 }
+
+// lookupURLScan queries urlscan.io's public Search API — keyless, no API key required for
+// searching (only for submitting new scans, which this does not do) — for any prior scans
+// matching field:value (field is "page.domain", "page.ip", or "page.url" — the bare "domain"/
+// "ip" fields are full-text analyzed and return loosely-tokenized noise rather than exact
+// matches, confirmed by hand against the live API before picking these field names). Historical
+// scan results
+// routinely include the actual rendered page, screenshots, contacted IPs/domains, and
+// TLS/hosting details for a target, which is valuable corroborating evidence for a forensic
+// report even when the target itself is offline by the time an investigator looks it up. The
+// public quota is shared and fairly tight, so this stays a per-target lookup (called only for
+// hits in one evidence run via EnrichLive), never a bulk feed.
+func lookupURLScan(ctx context.Context, client *httpx.Client, field, value string) any {
+	var data struct {
+		Total   int `json:"total"`
+		Results []struct {
+			Task struct {
+				Time   string `json:"time"`
+				URL    string `json:"url"`
+				Domain string `json:"domain"`
+			} `json:"task"`
+			Page struct {
+				URL     string `json:"url"`
+				Domain  string `json:"domain"`
+				IP      string `json:"ip"`
+				Country string `json:"country"`
+				Server  string `json:"server"`
+			} `json:"page"`
+			Result string `json:"result"`
+		} `json:"results"`
+	}
+	// Quoting the value is required for page.url searches (URLs contain ':' and '/', which the
+	// underlying Lucene-style query syntax would otherwise split on) and is harmless for the
+	// simpler ip/domain fields.
+	q := fmt.Sprintf(`%s:"%s"`, field, value)
+	u := fmt.Sprintf("https://urlscan.io/api/v1/search/?q=%s&size=5", url.QueryEscape(q))
+	if err := client.FetchJSON(ctx, u, httpx.FetchOptions{TimeoutMs: 8000}, &data); err != nil {
+		return nil
+	}
+	if data.Total == 0 {
+		return nil
+	}
+	return data
+}
+
+func safeBrowsingConfigured() bool { return os.Getenv("GOOGLE_SAFE_BROWSING_API_KEY") != "" }
+
+// safeBrowsingLookup checks a single URL against Google Safe Browsing's threatMatches:find
+// endpoint (v4) — free with a Google Cloud API key, but Google's ToS restricts the no-cost tier
+// to non-commercial use and caps request volume; this is why it's gated behind an explicit
+// GOOGLE_SAFE_BROWSING_API_KEY env var (unset by default) rather than enabled unconditionally
+// like the keyless sources above. Operators running K3 SIEM for internal defensive/forensic use
+// (the case this project targets) are the intended audience; anyone redistributing this as a
+// commercial product should review Google's current terms before enabling it.
+func safeBrowsingLookup(ctx context.Context, client *httpx.Client, targetURL string) any {
+	if !safeBrowsingConfigured() {
+		return nil
+	}
+	reqBody := map[string]any{
+		"client": map[string]string{"clientId": "k3-siem", "clientVersion": "1.0.0"},
+		"threatInfo": map[string]any{
+			"threatTypes":      []string{"MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE", "POTENTIALLY_HARMFUL_APPLICATION"},
+			"platformTypes":    []string{"ANY_PLATFORM"},
+			"threatEntryTypes": []string{"URL"},
+			"threatEntries":    []map[string]string{{"url": targetURL}},
+		},
+	}
+	var data any
+	u := "https://safebrowsing.googleapis.com/v4/threatMatches:find?key=" + url.QueryEscape(os.Getenv("GOOGLE_SAFE_BROWSING_API_KEY"))
+	if err := client.PostJSON(ctx, u, httpx.FetchOptions{TimeoutMs: 8000}, reqBody, &data); err != nil {
+		return nil
+	}
+	return data
+}

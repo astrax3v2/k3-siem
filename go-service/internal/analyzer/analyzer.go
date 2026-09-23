@@ -9,9 +9,12 @@ package analyzer
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"io/fs"
 	"net"
 	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"sort"
@@ -20,6 +23,7 @@ import (
 	"time"
 
 	"k3siem/goservice/internal/cache"
+	"k3siem/goservice/internal/imagemeta"
 	"k3siem/goservice/internal/ioc"
 	"k3siem/goservice/internal/ocsf"
 	"k3siem/goservice/internal/osint"
@@ -120,6 +124,7 @@ func extractCandidates(rec ocsf.Record, line string) candidateSet {
 
 // Hit is one IOC match found while scanning the input.
 type Hit struct {
+	SourceFile string        `json:"source_file,omitempty"` // set when the input was a directory of multiple files
 	LineNumber int           `json:"line_number"`
 	Excerpt    string        `json:"excerpt"`
 	MatchType  string        `json:"match_type"` // exact | cidr
@@ -136,6 +141,8 @@ func osintKind(t ioc.Type) (string, bool) {
 		return "ip", true
 	case ioc.TypeDomain:
 		return "domain", true
+	case ioc.TypeURL:
+		return "url", true
 	default:
 		return "", false
 	}
@@ -143,12 +150,14 @@ func osintKind(t ioc.Type) (string, bool) {
 
 // Result is the full outcome of one Analyze() run.
 type Result struct {
-	Input          string         `json:"input"`
-	StartedAt      time.Time      `json:"started_at"`
-	FinishedAt     time.Time      `json:"finished_at"`
-	LinesScanned   int            `json:"lines_scanned"`
-	Hits           []Hit          `json:"hits"`
-	HitsBySeverity map[string]int `json:"hits_by_severity"`
+	Input          string             `json:"input"`
+	StartedAt      time.Time          `json:"started_at"`
+	FinishedAt     time.Time          `json:"finished_at"`
+	LinesScanned   int                `json:"lines_scanned"`
+	FilesScanned   int                `json:"files_scanned,omitempty"` // set when the input was a directory
+	Hits           []Hit              `json:"hits"`
+	HitsBySeverity map[string]int     `json:"hits_by_severity"`
+	Images         []imagemeta.Result `json:"images,omitempty"` // evidence images found alongside/instead of logs
 }
 
 func truncate(s string, max int) string {
@@ -217,11 +226,114 @@ func matchLine(store *cache.Store, lineNumber int, text string) []Hit {
 	return hits
 }
 
-// Analyze streams the file at path line-by-line, matching each line's IOC candidates against
-// store using a runtime.NumCPU()-sized worker pool. Memory stays flat regardless of file size:
-// the input is never read into memory as a whole, only one line (plus bounded queues) is held
-// per in-flight worker at a time.
+// Analyze is the entrypoint: path may be a single log file, a single image, or a directory
+// containing any mix of both — the whole point of an evidence set in a forensic investigation
+// is that it's rarely just one file. Log files are matched against the IOC cache as before;
+// image files (per imagemeta.SupportedExt) get read-only EXIF/IPTC/XMP metadata extraction
+// instead, and their results land in Result.Images rather than Result.Hits.
 func Analyze(ctx context.Context, store *cache.Store, path string) (Result, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return Result{Input: path}, err
+	}
+	if info.IsDir() {
+		return analyzeDir(ctx, store, path)
+	}
+	if imagemeta.SupportedExt(path) {
+		return analyzeSingleImage(path), nil
+	}
+	return analyzeLogFile(ctx, store, path)
+}
+
+// analyzeSingleImage wraps one image's metadata extraction in a Result — no log-side fields
+// apply (LinesScanned stays 0, Hits stays empty).
+func analyzeSingleImage(path string) Result {
+	result := Result{Input: path, StartedAt: time.Now().UTC(), HitsBySeverity: map[string]int{}}
+	img, err := imagemeta.Extract(path)
+	if err != nil {
+		img = imagemeta.Result{Path: path, Warning: err.Error()}
+	}
+	result.Images = append(result.Images, img)
+	result.FinishedAt = time.Now().UTC()
+	return result
+}
+
+// analyzeDir walks an evidence directory, routing each file to either image-metadata
+// extraction or log analysis based on its extension, and aggregates both into one Result.
+// A single unreadable/corrupt file is skipped (recorded as a Warning on its own image entry,
+// or simply not counted for logs) rather than aborting analysis of the rest of the evidence.
+func analyzeDir(ctx context.Context, store *cache.Store, dirPath string) (Result, error) {
+	result := Result{Input: dirPath, StartedAt: time.Now().UTC(), HitsBySeverity: map[string]int{}}
+
+	walkErr := filepath.WalkDir(dirPath, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		if imagemeta.SupportedExt(p) {
+			img, extractErr := imagemeta.Extract(p)
+			if extractErr != nil {
+				img = imagemeta.Result{Path: p, Warning: extractErr.Error()}
+			}
+			result.Images = append(result.Images, img)
+			return nil
+		}
+		if looksBinary(p) {
+			// Real evidence directories routinely contain PDFs, Office docs, archives, the
+			// analyzer's own cache.db, etc. alongside logs and images — scanning those as text
+			// wastes time and can spuriously match IOC regexes against arbitrary bytes.
+			return nil
+		}
+
+		sub, subErr := analyzeLogFile(ctx, store, p)
+		if subErr != nil {
+			return nil // unreadable/binary file in the evidence set — skip, don't abort the batch
+		}
+		result.FilesScanned++
+		result.LinesScanned += sub.LinesScanned
+		result.Hits = append(result.Hits, sub.Hits...)
+		for sev, count := range sub.HitsBySeverity {
+			result.HitsBySeverity[sev] += count
+		}
+		return nil
+	})
+
+	result.FinishedAt = time.Now().UTC()
+	sort.Slice(result.Hits, func(i, j int) bool {
+		if result.Hits[i].SourceFile != result.Hits[j].SourceFile {
+			return result.Hits[i].SourceFile < result.Hits[j].SourceFile
+		}
+		return result.Hits[i].LineNumber < result.Hits[j].LineNumber
+	})
+	return result, walkErr
+}
+
+// looksBinary sniffs the first bytes of the file at path for a NUL byte — the same heuristic
+// git and most other tools use to distinguish text from binary content. A read failure is not
+// this function's concern (analyzeLogFile will surface it as a real error), so it just reports
+// false and lets the caller proceed to the normal open/scan path.
+func looksBinary(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	buf := make([]byte, 8000)
+	n, _ := f.Read(buf)
+	return bytes.IndexByte(buf[:n], 0) != -1
+}
+
+// analyzeLogFile streams the file at path line-by-line, matching each line's IOC candidates
+// against store using a runtime.NumCPU()-sized worker pool. Memory stays flat regardless of
+// file size: the input is never read into memory as a whole, only one line (plus bounded
+// queues) is held per in-flight worker at a time.
+func analyzeLogFile(ctx context.Context, store *cache.Store, path string) (Result, error) {
 	result := Result{Input: path, StartedAt: time.Now().UTC(), HitsBySeverity: map[string]int{}}
 
 	f, err := os.Open(path)
@@ -259,6 +371,7 @@ func Analyze(ctx context.Context, store *cache.Store, path string) (Result, erro
 	go func() {
 		defer close(done)
 		for hit := range hitsCh {
+			hit.SourceFile = path
 			result.Hits = append(result.Hits, hit)
 			result.HitsBySeverity[hit.Indicator.Severity]++
 		}

@@ -6,12 +6,15 @@ const LOOKUP = {
   domain: osintApi.lookupDomain,
   hash: osintApi.lookupHash,
   email: osintApi.lookupEmail,
+  url: osintApi.lookupUrl,
 };
 
 const SOURCE_LABEL = {
-  geo: 'Geolocation', reverse_dns: 'Reverse DNS', rdap: 'RDAP (WHOIS)',
+  geo: 'Geolocation (ip-api.com)', reverse_dns: 'Reverse DNS', rdap: 'RDAP (WHOIS)',
   virustotal: 'VirusTotal', abuseipdb: 'AbuseIPDB', shodan: 'Shodan',
   crtsh: 'crt.sh (Certificate Transparency)', domain_rdap: 'RDAP (WHOIS)', domain_mx: 'MX Records',
+  geo_freeipapi: 'Geolocation (freeipapi.com)', geo_ipwhois: 'Geolocation (ipwho.is)',
+  greynoise: 'GreyNoise', urlscan: 'urlscan.io', safe_browsing: 'Google Safe Browsing',
 };
 
 function vcardField(vcardArray, field) {
@@ -51,6 +54,82 @@ const PARSERS = {
         value: `${data.lat}, ${data.lon}`,
         href: `https://www.google.com/maps?q=${data.lat},${data.lon}`,
       },
+    ].filter(Boolean);
+  },
+
+  geo_freeipapi(data) {
+    return [
+      { label: 'Country', value: data.country ? `${flagEmoji(data.countryCode)} ${data.country}`.trim() : '—' },
+      (data.city || data.region) && { label: 'City / Region', value: [data.city, data.region].filter(Boolean).join(', ') },
+      data.lat != null && data.lon != null && {
+        label: 'Coordinates',
+        value: `${data.lat}, ${data.lon}`,
+        href: `https://www.google.com/maps?q=${data.lat},${data.lon}`,
+      },
+    ].filter(Boolean);
+  },
+
+  geo_ipwhois(data) {
+    return [
+      { label: 'Country', value: data.country ? `${flagEmoji(data.countryCode)} ${data.country}`.trim() : '—' },
+      (data.city || data.region) && { label: 'City / Region', value: [data.city, data.region].filter(Boolean).join(', ') },
+      data.lat != null && data.lon != null && {
+        label: 'Coordinates',
+        value: `${data.lat}, ${data.lon}`,
+        href: `https://www.google.com/maps?q=${data.lat},${data.lon}`,
+      },
+      data.isp && { label: 'ISP', value: data.isp },
+      data.org && data.org !== data.isp && { label: 'Organization', value: data.org },
+      data.asn != null && { label: 'ASN', value: `AS${data.asn}` },
+    ].filter(Boolean);
+  },
+
+  greynoise(data) {
+    if (data.riot) {
+      return [
+        { label: 'Classification', value: 'Known benign service (RIOT)', badge: 'green' },
+        data.name && data.name !== 'unknown' && { label: 'Service', value: data.name },
+        data.link && { label: 'GreyNoise Profile', value: 'View on GreyNoise', href: data.link },
+      ].filter(Boolean);
+    }
+    if (!data.noise) {
+      return [{ label: 'Classification', value: 'Not observed scanning the internet', badge: 'gray' }];
+    }
+    return [
+      {
+        label: 'Classification',
+        value: data.classification === 'malicious' ? 'Malicious scanner' : data.classification === 'benign' ? 'Benign scanner' : (data.classification || 'Noise'),
+        badge: data.classification === 'malicious' ? 'red' : data.classification === 'benign' ? 'green' : 'orange',
+      },
+      data.name && data.name !== 'unknown' && { label: 'Actor / Scanner', value: data.name },
+      data.last_seen && { label: 'Last Seen', value: data.last_seen },
+      data.link && { label: 'GreyNoise Profile', value: 'View on GreyNoise', href: data.link },
+    ].filter(Boolean);
+  },
+
+  urlscan(data) {
+    if (!Array.isArray(data.results) || !data.results.length) return [{ label: 'Historical Scans', value: 'None found' }];
+    const rows = [{ label: 'Total Scans', value: String(data.total ?? data.results.length) }];
+    data.results.slice(0, 5).forEach((r, i) => {
+      const domain = r.page?.domain || r.task?.domain || '—';
+      const country = r.page?.country ? ` · ${r.page.country}` : '';
+      rows.push({
+        label: i === 0 ? 'Most Recent Scan' : `Scan ${i + 1}`,
+        value: `${domain}${country} — ${fmtDate(r.task?.time) || '—'}`,
+        href: r.result,
+      });
+    });
+    return rows;
+  },
+
+  safe_browsing(data) {
+    if (!data || !Array.isArray(data.matches) || data.matches.length === 0) {
+      return [{ label: 'Verdict', value: 'No threats found', badge: 'green' }];
+    }
+    const types = [...new Set(data.matches.map(m => m.threatType).filter(Boolean))];
+    return [
+      { label: 'Verdict', value: 'Flagged as unsafe', badge: 'red' },
+      types.length > 0 && { label: 'Threat Types', value: types.join(', ') },
     ].filter(Boolean);
   },
 

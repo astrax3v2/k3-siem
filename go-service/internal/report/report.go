@@ -41,6 +41,9 @@ const htmlTemplateSource = `<!doctype html>
   th { color: #94a3b8; text-transform: uppercase; font-size: 10px; letter-spacing: .4px; }
   .excerpt { font-family: Consolas, monospace; color: #cbd5e1; word-break: break-all; max-width: 420px; }
   .osint { color: #90cdf4; max-width: 220px; }
+  .osint a, .gps a { color: #90cdf4; }
+  h2 { font-size: 15px; margin-top: 28px; color: #e2e8f0; }
+  .warn { color: #f6ad55; }
   .sev-critical { color: #fc8181; font-weight: 600; }
   .sev-high { color: #f6ad55; font-weight: 600; }
   .sev-medium { color: #63b3ed; font-weight: 600; }
@@ -53,8 +56,10 @@ const htmlTemplateSource = `<!doctype html>
   <div class="muted">{{.Input}} &middot; scanned {{.LinesScanned}} lines &middot; {{.StartedAt.Format "2006-01-02 15:04:05 MST"}} &rarr; {{.FinishedAt.Format "15:04:05 MST"}}</div>
 
   <div class="stats">
+    {{if .FilesScanned}}<div class="stat"><div class="label">Files Scanned</div><div class="value">{{.FilesScanned}}</div></div>{{end}}
     <div class="stat"><div class="label">Lines Scanned</div><div class="value">{{.LinesScanned}}</div></div>
     <div class="stat"><div class="label">Total Hits</div><div class="value">{{len .Hits}}</div></div>
+    {{if .Images}}<div class="stat"><div class="label">Images Found</div><div class="value">{{len .Images}}</div></div>{{end}}
     {{range $sev, $count := .HitsBySeverity}}
     <div class="stat"><div class="label">{{$sev}}</div><div class="value">{{$count}}</div></div>
     {{end}}
@@ -62,10 +67,11 @@ const htmlTemplateSource = `<!doctype html>
 
   {{if .Hits}}
   <table>
-    <thead><tr><th>Line</th><th>Type</th><th>Match</th><th>Value</th><th>Severity</th><th>Confidence</th><th>Source</th><th>Description</th><th>OSINT</th><th>Excerpt</th></tr></thead>
+    <thead><tr>{{if .FilesScanned}}<th>File</th>{{end}}<th>Line</th><th>Type</th><th>Match</th><th>Value</th><th>Severity</th><th>Confidence</th><th>Source</th><th>Description</th><th>OSINT</th><th>Excerpt</th></tr></thead>
     <tbody>
       {{range .Hits}}
       <tr>
+        {{if $.FilesScanned}}<td class="excerpt">{{.SourceFile}}</td>{{end}}
         <td>{{.LineNumber}}</td>
         <td>{{.Indicator.Type}}</td>
         <td>{{.MatchType}}</td>
@@ -82,6 +88,26 @@ const htmlTemplateSource = `<!doctype html>
   </table>
   {{else}}
   <div class="empty">No indicator matches found in this input.</div>
+  {{end}}
+
+  {{if .Images}}
+  <h2>📷 Image Evidence ({{len .Images}})</h2>
+  <table>
+    <thead><tr><th>File</th><th>Format</th><th>GPS</th><th>Captured</th><th>Make / Model</th><th>Software</th><th>Note</th></tr></thead>
+    <tbody>
+      {{range .Images}}
+      <tr>
+        <td class="excerpt">{{.Path}}</td>
+        <td>{{.Format}}</td>
+        <td class="gps">{{if .HasGPS}}<a href="{{.MapURL}}" target="_blank">{{printf "%.5f" .Latitude}}, {{printf "%.5f" .Longitude}}</a>{{else}}—{{end}}</td>
+        <td>{{if .CapturedAt}}{{.CapturedAt.Format "2006-01-02 15:04:05 MST"}}{{else}}—{{end}}</td>
+        <td>{{.Make}} {{.Model}}</td>
+        <td>{{.Software}}</td>
+        <td class="warn">{{.Warning}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
   {{end}}
 </body>
 </html>

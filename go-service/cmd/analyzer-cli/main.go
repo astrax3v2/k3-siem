@@ -62,7 +62,7 @@ func newSyncCmd() *cobra.Command {
 	var force bool
 	feedsCmd := &cobra.Command{
 		Use:   "feeds",
-		Short: "Sync all 13 threat-intel IOC feeds into the local cache",
+		Short: "Sync all 23 threat-intel IOC feeds into the local cache",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := rootContext()
 			defer cancel()
@@ -98,7 +98,7 @@ func newSyncCmd() *cobra.Command {
 	var refresh bool
 	osintCmd := &cobra.Command{
 		Use:   "osint",
-		Short: "Look up an IP/domain/hash/email against live OSINT sources and cache the result",
+		Short: "Look up an IP/domain/hash/email/url against live OSINT sources and cache the result",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if target == "" {
 				return fmt.Errorf("--target is required")
@@ -128,8 +128,10 @@ func newSyncCmd() *cobra.Command {
 				result = osint.LookupHash(ctx, client, store, target, ttl)
 			case "email":
 				result = osint.LookupEmail(ctx, client, store, target, ttl)
+			case "url":
+				result = osint.LookupURL(ctx, client, store, target, ttl)
 			default:
-				return fmt.Errorf("--type must be one of ip, domain, hash, email (got %q)", targetType)
+				return fmt.Errorf("--type must be one of ip, domain, hash, email, url (got %q)", targetType)
 			}
 
 			fmt.Printf("OSINT lookup for %s (%s), cached at %s:\n", result.Target, result.Type, result.FetchedAt.Format(time.RFC3339))
@@ -151,8 +153,8 @@ func newSyncCmd() *cobra.Command {
 			return nil
 		},
 	}
-	osintCmd.Flags().StringVar(&targetType, "type", "", "target type: ip, domain, hash, or email (required)")
-	osintCmd.Flags().StringVar(&target, "target", "", "the IP/domain/hash/email to look up (required)")
+	osintCmd.Flags().StringVar(&targetType, "type", "", "target type: ip, domain, hash, email, or url (required)")
+	osintCmd.Flags().StringVar(&target, "target", "", "the IP/domain/hash/email/url to look up (required)")
 	osintCmd.Flags().BoolVar(&refresh, "refresh", false, "bypass the cached TTL and force a live re-fetch")
 	syncCmd.AddCommand(osintCmd)
 
@@ -165,7 +167,7 @@ func newAnalyzeCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "analyze",
-		Short: "Analyze a log file against the cached IOC set",
+		Short: "Analyze a log file, image, or evidence directory against the cached IOC set",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if input == "" {
 				return fmt.Errorf("--input is required")
@@ -203,6 +205,12 @@ func newAnalyzeCmd() *cobra.Command {
 
 			fmt.Printf("Scanned %d lines in %s, found %d indicator hits (%s)\n",
 				result.LinesScanned, result.Input, len(result.Hits), result.FinishedAt.Sub(result.StartedAt).Round(time.Millisecond))
+			if result.FilesScanned > 0 {
+				fmt.Printf("  (%d log files scanned)\n", result.FilesScanned)
+			}
+			if len(result.Images) > 0 {
+				fmt.Printf("  %d image(s) with extracted EXIF/IPTC/XMP metadata\n", len(result.Images))
+			}
 			for sev, count := range result.HitsBySeverity {
 				fmt.Printf("  %-10s %d\n", sev, count)
 			}
@@ -222,7 +230,7 @@ func newAnalyzeCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&input, "input", "", "path to the log file to analyze (required)")
+	cmd.Flags().StringVar(&input, "input", "", "path to a log file, an image, or a directory of evidence to analyze (required)")
 	cmd.Flags().StringVar(&outJSON, "out", "", "write a JSON report to this path")
 	cmd.Flags().StringVar(&outHTML, "html", "", "write a self-contained HTML report to this path")
 	cmd.Flags().BoolVar(&offline, "offline", false, "refuse to run unless the cache is already populated (compliance/air-gap assertion)")

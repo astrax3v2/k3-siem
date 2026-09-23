@@ -5,6 +5,7 @@
 package httpx
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -48,8 +49,12 @@ func (o FetchOptions) timeout() time.Duration {
 }
 
 func (c *Client) do(ctx context.Context, url string, opts FetchOptions) (*http.Response, error) {
+	return c.doWithBody(ctx, http.MethodGet, url, opts, nil)
+}
+
+func (c *Client) doWithBody(ctx context.Context, method, url string, opts FetchOptions, body io.Reader) (*http.Response, error) {
 	ctx, cancel := context.WithTimeout(ctx, opts.timeout())
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
 		cancel()
 		return nil, err
@@ -99,6 +104,31 @@ func (c *Client) FetchText(ctx context.Context, url string, opts FetchOptions) (
 // FetchJSON GETs url and decodes the JSON body into out — mirrors the Node fetchJson() helper.
 func (c *Client) FetchJSON(ctx context.Context, url string, opts FetchOptions, out any) error {
 	res, err := c.do(ctx, url, opts)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		return fmt.Errorf("HTTP %d", res.StatusCode)
+	}
+	return json.NewDecoder(res.Body).Decode(out)
+}
+
+// PostJSON POSTs a JSON-encoded body to url and decodes the JSON response into out — for the
+// few sources that require a request body (e.g. Google Safe Browsing's threatMatches:find),
+// unlike every other source in this codebase which is a plain GET.
+func (c *Client) PostJSON(ctx context.Context, url string, opts FetchOptions, body, out any) error {
+	data, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	headers := map[string]string{"Content-Type": "application/json"}
+	for k, v := range opts.Headers {
+		headers[k] = v
+	}
+	opts.Headers = headers
+
+	res, err := c.doWithBody(ctx, http.MethodPost, url, opts, bytes.NewReader(data))
 	if err != nil {
 		return err
 	}

@@ -1,12 +1,14 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { eventsApi, correlationApi, intelApi, uebaApi, soarApi, incidentsApi, analyzeApi } from '../services/api';
+import { eventsApi, correlationApi, intelApi, uebaApi, soarApi, incidentsApi } from '../services/api';
 import { useAuth } from './Layout/Auth';
 import OsintPanel from './OSINT/OsintPanel';
 import IncidentReportPanel from './Incidents/IncidentReportPanel';
+import OfflineAnalysisPanel from './Analysis/OfflineAnalysisPanel';
+import LinkAnalysisGraph from './Investigation/LinkAnalysisGraph';
 
 const SEV = { Critical: 'badge-red', High: 'badge-orange', Medium: 'badge-blue', Low: 'badge-green', Info: 'badge-gray' };
-const IOC_TYPE_TO_OSINT = { IP: 'ip', Domain: 'domain', Hash: 'hash', Email: 'email' };
+const IOC_TYPE_TO_OSINT = { IP: 'ip', Domain: 'domain', Hash: 'hash', Email: 'email', URL: 'url' };
 
 // ── Event Explorer ──────────────────────────────────────────────────────────
 export function EventExplorer({ liveEvents }) {
@@ -22,8 +24,7 @@ export function EventExplorer({ liveEvents }) {
   const [importResult, setImportResult] = useState(null);
   const [importError, setImportError] = useState('');
   const [osintTarget, setOsintTarget] = useState(null);
-  const [analyzingOffline, setAnalyzingOffline] = useState(false);
-  const [offlineAnalysisError, setOfflineAnalysisError] = useState('');
+  const [showOfflineAnalysis, setShowOfflineAnalysis] = useState(false);
   const [filters, setFilters] = useState({
     severity: searchParams.get('severity') || '',
     source: searchParams.get('source') || '',
@@ -88,31 +89,6 @@ export function EventExplorer({ liveEvents }) {
   const onImportContent = async () => {
     if (!importContent.trim()) return;
     await importLogs({ content: importContent });
-  };
-
-  // Downloads a self-contained, OSINT-enriched offline analysis report (Go service) for the
-  // same batch just imported — independent of the live ingestion pipeline above, this re-scans
-  // the same raw content purely against the cached IOC/OSINT data.
-  const onDownloadOfflineReport = async () => {
-    if (!importContent.trim()) return;
-    setAnalyzingOffline(true);
-    setOfflineAnalysisError('');
-    try {
-      const res = await analyzeApi.offlineHtml({ content: importContent });
-      const blob = new Blob([res.data], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `k3-offline-analysis-${new Date().toISOString().replace(/[:.]/g, '-')}.html`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      setOfflineAnalysisError(e.response?.data?.error || e.message || 'Offline analysis failed');
-    } finally {
-      setAnalyzingOffline(false);
-    }
   };
 
   const onLoadLocalFile = async (event) => {
@@ -184,11 +160,10 @@ export function EventExplorer({ liveEvents }) {
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>Import Analysis</span>
-            <button className="btn btn-secondary btn-sm" disabled={analyzingOffline || !importContent.trim()} onClick={onDownloadOfflineReport}>
-              {analyzingOffline ? 'Analyzing…' : '⬇ Offline Analysis Report'}
+            <button className="btn btn-secondary btn-sm" disabled={!importContent.trim()} onClick={() => setShowOfflineAnalysis(true)}>
+              🔬 Offline Analysis Report
             </button>
           </div>
-          {offlineAnalysisError && <div style={{ fontSize: 11, color: '#fc8181' }}>{offlineAnalysisError}</div>}
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <span className="badge badge-gray">{importResult.imported} logs imported</span>
             {(importResult.alerts_by_severity || []).map(s => (
@@ -291,6 +266,9 @@ export function EventExplorer({ liveEvents }) {
 
       {osintTarget && (
         <OsintPanel type={osintTarget.type} value={osintTarget.value} onClose={() => setOsintTarget(null)} />
+      )}
+      {showOfflineAnalysis && (
+        <OfflineAnalysisPanel content={importContent} onClose={() => setShowOfflineAnalysis(false)} />
       )}
     </div>
   );
@@ -883,6 +861,8 @@ export function IncidentResponse() {
   const [report, setReport] = useState(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportError, setReportError] = useState('');
+  const [graphData, setGraphData] = useState(null);
+  const [graphLoading, setGraphLoading] = useState(false);
 
   // Keep the URL in sync so filtered/selected views from dashboards are shareable and bookmarkable.
   useEffect(() => {
@@ -956,6 +936,19 @@ export function IncidentResponse() {
       setReportError(e.response?.data?.error || 'Failed to generate report');
     } finally {
       setReportLoading(false);
+    }
+  };
+
+  const openLinkAnalysis = async () => {
+    if (!selectedId) return;
+    setGraphLoading(true);
+    try {
+      const res = await incidentsApi.report(selectedId);
+      setGraphData(res.data);
+    } catch {
+      // Generate Report (right below) surfaces a real error message; this stays quiet.
+    } finally {
+      setGraphLoading(false);
     }
   };
 
@@ -1079,6 +1072,9 @@ export function IncidentResponse() {
             <button className="btn btn-secondary btn-sm" style={{ width: '100%', marginTop: 8 }} disabled={reportLoading} onClick={generateReport}>
               {reportLoading ? 'Generating…' : '📋 Generate Report'}
             </button>
+            <button className="btn btn-secondary btn-sm" style={{ width: '100%', marginTop: 6 }} disabled={graphLoading} onClick={openLinkAnalysis}>
+              {graphLoading ? 'Loading…' : '🕸️ Link Analysis'}
+            </button>
             {reportError && <div style={{ fontSize: 11, color: '#fc8181', marginTop: 6 }}>{reportError}</div>}
 
             <div style={{ marginTop: 10 }}>
@@ -1136,6 +1132,7 @@ export function IncidentResponse() {
       )}
 
       {report && <IncidentReportPanel report={report} onClose={() => setReport(null)} />}
+      {graphData && <LinkAnalysisGraph report={graphData} onClose={() => setGraphData(null)} />}
     </div>
   );
 }

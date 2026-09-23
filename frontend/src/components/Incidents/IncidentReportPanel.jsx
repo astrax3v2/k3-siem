@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import OsintPanel from '../OSINT/OsintPanel';
+import LinkAnalysisGraph from '../Investigation/LinkAnalysisGraph';
 
 const SEV = { Critical: 'badge-red', High: 'badge-orange', Medium: 'badge-blue', Low: 'badge-green', Info: 'badge-gray' };
-const IOC_TYPE_TO_OSINT = { IP: 'ip', Domain: 'domain', Hash: 'hash', Email: 'email' };
+const IOC_TYPE_TO_OSINT = { IP: 'ip', Domain: 'domain', Hash: 'hash', Email: 'email', URL: 'url' };
 
 function Section({ title, children }) {
   return (
@@ -22,6 +23,7 @@ function Chip({ children }) {
 // matches, MITRE coverage); this just lays it out and wires indicator clicks to OsintPanel.
 export default function IncidentReportPanel({ report, onClose }) {
   const [osintTarget, setOsintTarget] = useState(null);
+  const [showGraph, setShowGraph] = useState(false);
   if (!report) return null;
   const { incident, alerts = [], notes = [], entities = {}, mitre = [], ioc_summary: iocSummary = [], narrative, generated_at: generatedAt } = report;
 
@@ -42,6 +44,7 @@ export default function IncidentReportPanel({ report, onClose }) {
             {generatedAt && <div style={{ fontSize: 10, color: 'var(--text3)' }}>Generated {new Date(generatedAt).toLocaleString()}</div>}
           </div>
           <div className="no-print" style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+            <button className="btn btn-secondary btn-sm" onClick={() => setShowGraph(true)}>🕸️ Link Analysis</button>
             <button className="btn btn-secondary btn-sm" onClick={() => window.print()}>🖨️ Export PDF</button>
             <button className="btn btn-secondary btn-sm" onClick={onClose}>Close</button>
           </div>
@@ -140,6 +143,9 @@ export default function IncidentReportPanel({ report, onClose }) {
 
       {osintTarget && (
         <OsintPanel type={osintTarget.type} value={osintTarget.value} onClose={() => setOsintTarget(null)} />
+      )}
+      {showGraph && (
+        <LinkAnalysisGraph report={report} onClose={() => setShowGraph(false)} />
       )}
     </div>
   );

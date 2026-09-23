@@ -62,10 +62,21 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
+	// A brand-new cache.db (first run, or a fresh volume/container) has zero IOCs until someone
+	// manually triggers a sync — with no automatic bootstrap, that silently leaves OSINT/offline
+	// analysis running against an empty cache indefinitely, since the periodic ticker below
+	// otherwise waits a full interval (30 days by default) before its first run. Detect that
+	// case and run once immediately instead of waiting.
+	stats, statsErr := store.Stats()
+	needsBootstrap := statsErr != nil || stats.Total == 0
+	if needsBootstrap {
+		log.Printf("[server] IOC cache is empty — running an initial feed sync now instead of waiting %d days", intervalDays)
+	}
+
 	// Automatic side of "update on request or automatically every month" — manual refresh is
 	// just POST /v1/intel/feeds/sync, handled independently of this ticker.
 	interval := time.Duration(intervalDays) * 24 * time.Hour
-	scheduler.StartPeriodic(ctx, interval, false, func(ctx context.Context) error {
+	scheduler.StartPeriodic(ctx, interval, needsBootstrap, func(ctx context.Context) error {
 		log.Printf("[scheduler] running scheduled feed sync (every %d days)", intervalDays)
 		summary, err := feeds.SyncAll(ctx, store, client, false)
 		if err != nil {

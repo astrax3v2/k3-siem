@@ -7,6 +7,57 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **🕸️ Link Analysis** — a Maltego-style entity-relationship graph for case investigation,
+  built purely from data the incident report endpoint already assembles (no new backend route):
+  the incident at the center, its linked alerts, and every asset/user/IP/IOC that shows up
+  across them, laid out with a self-contained force-directed simulation (no new dependency).
+  Pan/zoom, hover to highlight a node's connections, and click any IP/domain/hash/email/URL
+  node to open the same OSINT lookup panel used everywhere else. Reachable from Case
+  Management's case detail panel and from inside the "Generate Report" slide-over.
+- **Inline offline analysis report** — "🔬 Offline Analysis Report" in Event Explorer's Import
+  Analysis panel now renders the hits/image-evidence table directly in the app (a new
+  `OfflineAnalysisPanel`, fetching the existing JSON endpoint) instead of only offering a
+  silent file download; the HTML download is still one click away inside the panel.
+- **5 more parsed OSINT sources in the lookup panel**: the freeipapi.com/ipwho.is geolocation
+  sources, GreyNoise, urlscan.io, and Google Safe Browsing were already returned by the API
+  (added last release) but had no frontend parser, so they fell back to a raw JSON dump — they
+  now render as clean labeled fields like every other source. Also wired `url` as a lookup type
+  end-to-end (API client, IOC-click handlers, OSINT panel), which was previously unreachable
+  from the UI even though the backend route existed.
+
+### Fixed
+- **The Go service's threat-intel cache never populated itself on a fresh deployment** — the
+  30-day auto-refresh ticker only runs on its own schedule, so a brand-new `cache.db` (first
+  run, a fresh container/volume, or after a data reset) silently had zero IOCs until someone
+  manually ran a sync, making the offline analyzer and OSINT enrichment produce empty results
+  with no obvious cause. `cmd/server` now detects an empty cache at startup and runs the first
+  sync immediately instead of waiting a month.
+
+### Docs
+- **README corrected to match what's actually reachable in the app**, closing a documentation
+  gap left over from the 2.0.x-era removal of the dedicated UEBA and SOAR pages (and, it turns
+  out, the standalone Vulnerability Scanner page too — none of the three are routed in
+  `App.jsx` any more, and `Pages.jsx`'s `UEBA()`/`SOAR()` exports and `VulnerabilityScanner.jsx`
+  are dead code today):
+  - UEBA: the risk-scoring engine (`userRiskEngine.js`) and `GET /api/ueba/scores` are real and
+    still running — there is just no page to browse them anymore, only a "High-Risk Users"
+    count on the Overview dashboard.
+  - SOAR: playbook execution is real and still triggered inline from an alert in the Triage
+    queue — there is no separate console to browse the playbook catalog or execution history.
+  - Vulnerability Scanner: CVE findings are real and still shown per-asset in Asset Inventory's
+    detail panel and the "Vulnerability Summary" dashboard widget — there is no separate
+    fleet-wide filterable table anymore.
+  - Removed a stale screenshot referencing the retired SOAR page; reworded every KPI tile/stat
+    description that implied a working drill-through into one of these three.
+
+## [3.0.0] - 2026-08-01
+
+A major version bump: this release adds an entire new Go service alongside the existing
+Node.js/React stack, turning K3 SIEM from a live-monitoring SIEM into one that also supports
+offline/air-gapped digital-forensic investigation - offline log + image evidence analysis, a
+23-feed threat-intel cache, and 9-source OSINT enrichment with cross-corroborating geolocation.
+
+### Added
 - **New Go service (`go-service/`) for OSINT enrichment, threat-intel feed caching, and
   offline log analysis** - a standalone module built for concurrent, low-memory-footprint work
   and for analysis that needs to run with no live backend and no live internet access:
@@ -30,6 +81,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
     response shape, zero frontend changes) and the new offline-analysis route. The live
     ingestion pipeline, real-time correlation, and IOC-match alerting are untouched - this is
     additive, not a replacement of Node's own threat-intel feed sync.
+- **10 more curated threat-intel feeds (23 total) and 5 more OSINT sources**, aimed squarely at
+  digital-forensic investigation where evidence is offline logs and images rather than live
+  traffic:
+  - New feeds: Tor Bulk Exit List, SANS ISC DShield Block List, Team Cymru Fullbogons IPv4,
+    GreenSnow Blocklist, Emerging Threats Compromised IPs, DigitalSide OSINT IPs/URLs/Domains,
+    botvrij.eu Domain Blocklist, PhishStats Recent - all keyless, all wired into the same bbolt
+    cache and sync path as the original 13.
+  - **Three independent IP geolocation sources** (ip-api.com, freeipapi.com, ipwho.is) cross-
+    checked into a `GeoConsensus` score ("N/M sources agree on country X") instead of trusting a
+    single provider - shown in both the OSINT panel and the offline-analysis HTML report.
+  - **GreyNoise Community API** (keyless) classifies a hit IP as internet-background scan noise,
+    a known-benign service, or neither - separates opportunistic scanning from a targeted attack
+    in a forensic report.
+  - **urlscan.io** (keyless Search API) surfaces prior scans of a hit IP/domain/URL - contacted
+    infrastructure, TLS/hosting details, and a link to the archived screenshot, useful when the
+    original site is long gone by the time an investigator looks at the evidence.
+  - **Google Safe Browsing** URL reputation - off by default behind `GOOGLE_SAFE_BROWSING_API_KEY`
+    (unset in `.env.example`), since Google's no-cost tier restricts it to non-commercial use; a
+    new `GET /api/osint/url` route (and `analyzer-cli sync osint --type url`) exposes it.
+  - `EnrichLive` (live OSINT enrichment during offline analysis) only ever touches the specific
+    IPs/domains/URLs that show up as hits in one evidence run, never the whole IOC cache, so free
+    API quotas stay intact regardless of cache size.
+- **Image metadata extraction for photographic evidence** - a new `internal/imagemeta` package
+  (pure Go, no cgo, via `github.com/bep/imagemeta`) pulls EXIF/IPTC/XMP out of JPEG, PNG, TIFF,
+  WebP, HEIC/HEIF, AVIF, and common RAW formats (DNG/CR2/NEF/ARW/PEF): GPS coordinates (with a
+  ready-to-click map link), capture timestamp, camera make/model, and software/editing history.
+  `analyzer.Analyze()` now accepts a single image, a single log file, or a whole evidence
+  directory mixing both - each file is routed by content, log hits and image metadata land in
+  one combined JSON/HTML report, and non-text binary files encountered in a directory (PDFs,
+  archives, the cache database itself) are skipped rather than scanned as garbage log lines.
 - **Automated incident analysis reporting** - a one-click "Generate Report" action on any case
   assembles a narrative summary (entities involved, MITRE tactics observed, threat-intel
   matches), resolves every IOC-matched alert back to its source feed/indicator/confidence via a

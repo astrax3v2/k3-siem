@@ -45,6 +45,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v1/osint/domain", s.handleOsintDomain)
 	s.mux.HandleFunc("GET /v1/osint/hash", s.handleOsintHash)
 	s.mux.HandleFunc("GET /v1/osint/email", s.handleOsintEmail)
+	s.mux.HandleFunc("GET /v1/osint/url", s.handleOsintURL)
 
 	s.mux.HandleFunc("GET /v1/intel/feeds", s.handleFeedsList)
 	s.mux.HandleFunc("POST /v1/intel/feeds/sync", s.handleFeedsSync)
@@ -104,6 +105,15 @@ func (s *Server) handleOsintEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, osint.LookupEmail(r.Context(), s.client, s.store, email, osint.DefaultTTL))
+}
+
+func (s *Server) handleOsintURL(w http.ResponseWriter, r *http.Request) {
+	target := r.URL.Query().Get("url")
+	if target == "" {
+		writeError(w, http.StatusBadRequest, "url is required")
+		return
+	}
+	writeJSON(w, http.StatusOK, osint.LookupURL(r.Context(), s.client, s.store, target, osint.DefaultTTL))
 }
 
 // --- Threat intel: feeds ---------------------------------------------------
